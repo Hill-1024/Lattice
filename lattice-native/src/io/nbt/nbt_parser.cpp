@@ -377,12 +377,13 @@ ParseResult parse_impl(const std::uint8_t* raw_data, std::size_t raw_len,
                 f.depth = child_depth;
                 f.entry_pos = writer.last_entry_pos();
                 f.payload_start = pos;
+                // push_frame may relocate the stack and invalidate top.
+                --top.list_remaining;
                 if (!push_frame(f)) {
                     finalize_writer(Status::kDepthOverflow);
                     res.error_offset = pos;
                     return res;
                 }
-                --top.list_remaining;
                 continue;
             }
 
@@ -426,12 +427,13 @@ ParseResult parse_impl(const std::uint8_t* raw_data, std::size_t raw_len,
                     return res;
                 }
                 pos += 1 + 4;
+                // push_frame may relocate the stack and invalidate top.
+                --top.list_remaining;
                 if (!push_frame(f)) {
                     finalize_writer(Status::kDepthOverflow);
                     res.error_offset = pos;
                     return res;
                 }
-                --top.list_remaining;
                 continue;
             }
 

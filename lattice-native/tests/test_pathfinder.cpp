@@ -508,3 +508,41 @@ TEST_CASE("pathfinder masks: dispatcher matches scalar") {
     CHECK(passableDispatch == passableScalar);
     CHECK(standingDispatch == standingScalar);
 }
+
+TEST_CASE("pathfinder mirror has a bounded working set and admits fresh regions") {
+    const std::int8_t types[] = {OPEN};
+    const float floors[] = {0.0F};
+    const int cell[] = {0};
+    PathfinderStateSnapshot source{};
+    source.cells = cell;
+    source.raw_path_types = types;
+    source.floor_heights = floors;
+    source.descriptor_count = 1;
+    source.size_x = source.size_y = source.size_z = 1;
+    PathfinderStateMirror mirror{};
+    constexpr std::size_t budget = 512;
+    for (std::size_t i = 0; i < budget * 3; ++i) {
+        source.min_x = static_cast<int>(i * 16);
+        store_pathfinder_state_snapshot(mirror, 17, source);
+        CHECK(mirror.sections.size() <= budget);
+        REQUIRE(state_mirror_covers(mirror, 17, source.min_x, 0, 0, 1, 1, 1));
+    }
+    CHECK_FALSE(state_mirror_covers(mirror, 17, 0, 0, 0, 1, 1, 1));
+    const auto count = mirror.sections.size();
+    store_pathfinder_state_snapshot(mirror, 17, source);
+    CHECK(mirror.sections.size() == count);
+    invalidate_pathfinder_state_mirror_cell(mirror, 17, source.min_x, 0, 0);
+    CHECK_FALSE(state_mirror_covers(mirror, 17, source.min_x, 0, 0, 1, 1, 1));
+    store_pathfinder_state_snapshot(mirror, 18, source);
+    CHECK(mirror.sections.size() == 1);
+    CHECK_FALSE(state_mirror_covers(mirror, 17, source.min_x, 0, 0, 1, 1, 1));
+
+    // An oversized snapshot must not evict useful entries or be partially cached.
+    std::vector<int> large_cells((budget + 1) * 16, 0);
+    source.cells = large_cells.data();
+    source.min_x = -16;
+    source.size_x = static_cast<int>(large_cells.size());
+    store_pathfinder_state_snapshot(mirror, 18, source);
+    CHECK(mirror.sections.size() == 1);
+    CHECK_FALSE(state_mirror_covers(mirror, 18, -16, 0, 0, 1, 1, 1));
+}

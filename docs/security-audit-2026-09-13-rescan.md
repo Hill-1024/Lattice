@@ -1,6 +1,6 @@
 # Lattice 安全扫描与死代码记录索引
 
-2026-09-13，扫描 ID：`72c01cd0-86be-4569-8841-af17fd12e43a`。Codex Security 已验证并索引完成，记录两个中危生产风险；尚未修复。
+2026-09-13，扫描 ID：`72c01cd0-86be-4569-8841-af17fd12e43a`。Codex Security 已验证并索引完成，记录两个中危生产风险；扫描当时尚未修复。当前修复状态见[归并报告](security-audit-2026-09-13-pr.zh-CN.md)。
 
 - [自动生成的安全报告](security-audit-2026-09-13-rescan/report.md)：证据、攻击条件、修复方案和回归验证建议。
 - [死代码与未接入功能清单](security-audit-2026-09-13-rescan/dead-code-review.md)：确定的私有死代码、恒假分支、测试专用代码、51 个孤立 JNI 导出及休眠 NBT UAF。

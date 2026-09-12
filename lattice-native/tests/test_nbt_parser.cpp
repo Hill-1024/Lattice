@@ -279,3 +279,40 @@ TEST_CASE("nbt_parser: invalid three-byte modified UTF-8 rejected") {
     auto r = parse_into_index(raw);
     check_parse_status(r, Status::kBadString, 7);
 }
+
+TEST_CASE("nbt_parser: container lists survive stack growth") {
+    for (const int boundary : {64, 128, 256}) {
+        for (const bool nested_list : {false, true}) {
+            CAPTURE(boundary);
+            CAPTURE(nested_list);
+            std::vector<std::uint8_t> raw;
+            // Place the parent list at the last slot before stack growth.
+            for (int i = 0; i < boundary - 1; ++i) {
+                push_u8(raw, 10);
+                push_name(raw, "");
+            }
+            push_u8(raw, 9);
+            push_name(raw, "");
+            push_u8(raw, nested_list ? 9 : 10);
+            push_i32_be(raw, 2);
+            for (int i = 0; i < 2; ++i) {
+                if (nested_list) {
+                    push_u8(raw, 1);
+                    push_i32_be(raw, 1);
+                    push_u8(raw, 42);
+                } else {
+                    push_u8(raw, 0); // empty compound element
+                }
+            }
+            for (int i = 0; i < boundary - 1; ++i) push_u8(raw, 0);
+            for (bool indexed : {false, true}) {
+                const auto result = indexed ? parse_into_index(raw) : validate_only(raw);
+                CHECK(result.status == Status::kOk);
+                CHECK(result.bytes_consumed == raw.size());
+                CHECK(result.tag_count == boundary + (nested_list ? 4 : 2));
+            }
+            raw.pop_back();
+            CHECK(validate_only(raw).status == Status::kTruncated);
+        }
+    }
+}

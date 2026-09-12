@@ -2,17 +2,10 @@ package com.latticemc.lattice.bootstrap;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.ByteArrayInputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
@@ -359,73 +352,14 @@ public final class LatticeNativeLoader {
     }
 
     static Path extractToCache(String libFile, InputStream in, String trustedDigest) throws IOException {
-        final Path cacheDir = resolveCacheDir();
-        Files.createDirectories(cacheDir);
-        hardenCacheDir(cacheDir);
-
         final byte[] bytes = in.readAllBytes();
-        final String digest = sha256Hex(bytes);
-        if (trustedDigest != null && !digest.equalsIgnoreCase(trustedDigest)) {
-            throw new IOException("native library digest changed in transit for " + libFile);
+        if (trustedDigest != null) {
+            verifyTrustedDigest(bytes, trustedDigest, libFile);
         }
-
-        // Content-addressed name: reuse is only accepted when the on-disk file is a regular file
-        // (never a symlink) whose full SHA-256 matches the expected bytes.
-        final Path target = cacheDir.resolve(libFile + "." + digest.substring(0, 16));
-        if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS) && hasDigest(target, digest)) {
-            return target;
-        }
-
-        final Path tmp = Files.createTempFile(cacheDir, libFile + ".", ".part");
-        try {
-            try (OutputStream out = Files.newOutputStream(tmp,
-                    StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                out.write(bytes);
-            }
-            try {
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicFailed) {
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } finally {
-            Files.deleteIfExists(tmp);
-        }
-
-        if (!hasDigest(target, digest)) {
-            throw new IOException("native library cache entry failed post-write verification: " + target);
-        }
-        target.toFile().deleteOnExit();
-        return target;
-    }
-
-    private static boolean hasDigest(Path target, String expectedDigest) {
-        try {
-            return sha256Hex(Files.readAllBytes(target)).equalsIgnoreCase(expectedDigest);
-        } catch (IOException unreadable) {
-            return false;
-        }
-    }
-
-    private static Path resolveCacheDir() {
         final String override = System.getProperty(SYS_CACHE_DIR, "").trim();
-        if (!override.isEmpty()) {
-            return Path.of(override);
-        }
-        // Per-user directory rather than a shared, world-writable java.io.tmpdir path, so other
-        // local users cannot pre-place a file at the predictable cache name.
-        final String user = System.getProperty("user.name", "unknown").replaceAll("[^A-Za-z0-9._-]", "_");
-        return Path.of(System.getProperty("java.io.tmpdir"), "lattice-native-" + user);
-    }
-
-    private static void hardenCacheDir(Path cacheDir) throws IOException {
-        if (Files.isSymbolicLink(cacheDir)) {
-            throw new IOException("refusing to use a symlinked native cache directory: " + cacheDir);
-        }
-        try {
-            Files.setPosixFilePermissions(cacheDir, PosixFilePermissions.fromString("rwx------"));
-        } catch (UnsupportedOperationException | IOException ignored) {
-            // Non-POSIX filesystems (Windows) have no equivalent; the per-user path still applies.
-        }
+        final Path parent = override.isEmpty()
+                ? Path.of(System.getProperty("java.io.tmpdir")) : Path.of(override);
+        return NativeLibraryCache.extract(parent, libFile, new ByteArrayInputStream(bytes));
     }
 
     private static String sha256Hex(byte[] bytes) {

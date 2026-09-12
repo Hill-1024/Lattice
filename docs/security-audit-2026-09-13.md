@@ -1,6 +1,6 @@
 # Lattice Security Audit — 2026-09-13
 
-> **Pre-submission correction (2026-09-13):** This is the initial audit record. The [Chinese PR report](security-audit-2026-09-13-pr.zh-CN.md) and [rescan](security-audit-2026-09-13-rescan/report.md) supersede its completion claims. V3 retains a cross-account cache pre-creation risk; V13 adds an optional constrained overload without enforcing it in production callers; V9 has no complete dependency verification metadata. Initial severity totals are not counts of verified remote vulnerabilities; installed plugins and administrator-controlled settings are separate trust boundaries.
+> **Pre-submission correction (2026-09-13):** This is the initial audit record. The [Chinese PR report](security-audit-2026-09-13-pr.zh-CN.md) and [rescan](security-audit-2026-09-13-rescan/report.md) supersede its completion claims. V3's residual cache pre-creation risk is addressed by the private extraction implementation consolidated from PR #1; V13 adds an optional constrained overload without enforcing it in production callers; V9 has no complete dependency verification metadata. Initial severity totals are not counts of verified remote vulnerabilities; installed plugins and administrator-controlled settings are separate trust boundaries.
 
 Audit of the `Lattice` repository (Minecraft 1.21.11 server fork of Purpur, with a C++ native
 acceleration library loaded via JNI). Revision at audit time: branch `ver/1.21.11`.

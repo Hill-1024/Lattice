@@ -156,7 +156,7 @@ class LatticeNativeLoaderTestSuite {
     // ---- Cache extraction hardening (audit finding V3) ---------------------
 
     @Test
-    void cacheExtractionReplacesSymlinkInsteadOfFollowingIt(@TempDir Path tempDir) throws Exception {
+    void cacheExtractionIgnoresLegacySymlinkAndUsesPrivateDirectory(@TempDir Path tempDir) throws Exception {
         Path cacheDir = tempDir.resolve("cache");
         Path attacker = tempDir.resolve("attacker.so");
         byte[] payload = "trusted-native-bytes".getBytes(StandardCharsets.UTF_8);
@@ -180,7 +180,13 @@ class LatticeNativeLoaderTestSuite {
                     new ByteArrayInputStream(payload), digest);
             assertTrue(Files.isRegularFile(extracted, LinkOption.NOFOLLOW_LINKS),
                     "extracted entry must be a regular file, not a symlink");
+            assertFalse(extracted.equals(target), "legacy cache path must not be reused");
+            assertTrue(Files.isSymbolicLink(target), "legacy entry is left untouched");
             assertArrayEquals(payload, Files.readAllBytes(extracted));
+            Path second = LatticeNativeLoader.extractToCache("liblattice.so",
+                    new ByteArrayInputStream(payload), digest);
+            assertFalse(extracted.getParent().equals(second.getParent()),
+                    "each extraction must use a fresh private directory");
             assertArrayEquals(hostile, Files.readAllBytes(attacker),
                     "the symlink target must not have been written through");
         } finally {
@@ -188,4 +194,20 @@ class LatticeNativeLoaderTestSuite {
             else System.setProperty("lattice.native.cacheDir", previous);
         }
     }
+    @Test
+    void pinnedDigestMismatchDoesNotCreateExtractionDirectory(@TempDir Path tempDir) throws Exception {
+        String previous = System.getProperty("lattice.native.cacheDir");
+        System.setProperty("lattice.native.cacheDir", tempDir.toString());
+        try {
+            assertThrows(IOException.class, () -> LatticeNativeLoader.extractToCache("liblattice.so",
+                    new ByteArrayInputStream("untrusted".getBytes(StandardCharsets.UTF_8)), "0".repeat(64)));
+            try (var entries = Files.list(tempDir)) {
+                assertEquals(0, entries.count(), "reject untrusted bytes before extraction");
+            }
+        } finally {
+            if (previous == null) System.clearProperty("lattice.native.cacheDir");
+            else System.setProperty("lattice.native.cacheDir", previous);
+        }
+    }
+
 }
