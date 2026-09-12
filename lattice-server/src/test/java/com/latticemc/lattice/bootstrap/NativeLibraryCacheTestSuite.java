@@ -114,7 +114,7 @@ class NativeLibraryCacheTestSuite {
     }
 
     @Test
-    void rejectsInheritedWindowsFileWriteGrants() throws Exception {
+    void inheritedWindowsFileWriteGrantsCannotReachExtractedCode() throws Exception {
         assumeTrue(temporary.getFileSystem().supportedFileAttributeViews().contains("acl"));
         var view = Files.getFileAttributeView(temporary, java.nio.file.attribute.AclFileAttributeView.class);
         var acl = new java.util.ArrayList<>(view.getAcl());
@@ -126,7 +126,21 @@ class NativeLibraryCacheTestSuite {
                         java.nio.file.attribute.AclEntryFlag.DIRECTORY_INHERIT,
                         java.nio.file.attribute.AclEntryFlag.INHERIT_ONLY).build());
         view.setAcl(acl);
-        assertThrows(IOException.class, () -> extract(temporary));
+        // A provider may suppress inheritance when applying the initial ACL.
+        // Either rejection or a private resulting directory/file is safe.
+        final Path extracted;
+        try {
+            extracted = extract(temporary);
+        } catch (IOException rejected) {
+            return;
+        }
+        assertArrayEquals(CONTENT, Files.readAllBytes(extracted));
+        for (Path path : java.util.List.of(extracted.getParent(), extracted)) {
+            var resultingAcl = Files.getFileAttributeView(path, java.nio.file.attribute.AclFileAttributeView.class).getAcl();
+            assertFalse(resultingAcl.stream().anyMatch(entry -> entry.principal().equals(everyone)
+                    && entry.type() == java.nio.file.attribute.AclEntryType.ALLOW
+                    && entry.permissions().contains(java.nio.file.attribute.AclEntryPermission.WRITE_DATA)));
+        }
     }
 
     @Test
