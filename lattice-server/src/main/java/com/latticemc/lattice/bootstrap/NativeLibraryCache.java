@@ -144,7 +144,8 @@ final class NativeLibraryCache {
         // Validate each parent before relying on the identity of its child.
 
         if (views.contains("posix") && views.contains("unix")) {
-            final boolean mac = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
+            final String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+            final boolean mac = os.contains("mac") || os.contains("darwin");
             for (Path directory : ancestors) {
                 if (mac) validateMacAcl(directory);
                 final int uid = (int) Files.getAttribute(directory, "unix:uid", LinkOption.NOFOLLOW_LINKS);
