@@ -1,13 +1,22 @@
 package com.latticemc.lattice.bootstrap;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
-import java.io.IOException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LatticeNativeLoaderTestSuite {
 
@@ -87,5 +96,96 @@ class LatticeNativeLoaderTestSuite {
         assertThrows(IOException.class, () -> LatticeNativeLoader.verifyChecksum(bytes,
                 "0".repeat(64) + "  lattice-native-linux-x86_64.so\n",
                 "lattice-native-linux-x86_64.so"));
+    }
+
+    // ---- Download trust boundary (audit finding V1/V5) ---------------------
+
+    @Test
+    void downloadUrlRejectsPlainHttpUnlessExplicitlyAllowed() throws Exception {
+        assertThrows(IOException.class, () -> LatticeNativeLoader.requireHttpUri(
+                "http://github.com/LatticeMC/Lattice/releases/download/native-latest/x.so", false));
+        assertEquals("http", LatticeNativeLoader.requireHttpUri(
+                "http://mirror.internal/x.so", true).getScheme());
+    }
+
+    @Test
+    void downloadUrlRejectsNonHttpSchemes() throws Exception {
+        assertThrows(IOException.class, () -> LatticeNativeLoader.requireHttpUri("file:///etc/passwd", false));
+        assertThrows(IOException.class, () -> LatticeNativeLoader.requireHttpUri("ftp://evil.test/x.so", true));
+        assertEquals("https", LatticeNativeLoader.requireHttpUri("https://github.com/x.so", false).getScheme());
+    }
+
+    @Test
+    void redirectsAreRestrictedToTrustedHosts() throws Exception {
+        LatticeNativeLoader.requireAllowedRedirect(URI.create("https://objects.githubusercontent.com/x"), false);
+        LatticeNativeLoader.requireAllowedRedirect(URI.create("https://github.com/x"), false);
+        assertThrows(IOException.class,
+                () -> LatticeNativeLoader.requireAllowedRedirect(URI.create("https://evil.test/x"), false));
+        assertThrows(IOException.class,
+                () -> LatticeNativeLoader.requireAllowedRedirect(URI.create("http://github.com/x"), false));
+    }
+
+    @Test
+    void trustedDigestComesFromConfigurationAndRejectsMalformedValues() {
+        String previous = System.getProperty("lattice.native.sha256");
+        try {
+            System.clearProperty("lattice.native.sha256");
+            assertEquals(null, LatticeNativeLoader.trustedDigestFor("lattice-native-linux-x86_64.so"));
+
+            System.setProperty("lattice.native.sha256", "AB".repeat(32));
+            assertEquals("ab".repeat(32), LatticeNativeLoader.trustedDigestFor("lattice-native-linux-x86_64.so"));
+
+            System.setProperty("lattice.native.sha256", "not-a-digest");
+            assertThrows(IllegalArgumentException.class,
+                    () -> LatticeNativeLoader.trustedDigestFor("lattice-native-linux-x86_64.so"));
+        } finally {
+            if (previous == null) System.clearProperty("lattice.native.sha256");
+            else System.setProperty("lattice.native.sha256", previous);
+        }
+    }
+
+    @Test
+    void trustedDigestVerificationRejectsMismatch() throws Exception {
+        byte[] bytes = "native".getBytes(StandardCharsets.UTF_8);
+        String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        LatticeNativeLoader.verifyTrustedDigest(bytes, digest, "lattice-native-linux-x86_64.so");
+        assertThrows(IOException.class, () -> LatticeNativeLoader.verifyTrustedDigest(
+                bytes, "0".repeat(64), "lattice-native-linux-x86_64.so"));
+    }
+
+    // ---- Cache extraction hardening (audit finding V3) ---------------------
+
+    @Test
+    void cacheExtractionReplacesSymlinkInsteadOfFollowingIt(@TempDir Path tempDir) throws Exception {
+        Path cacheDir = tempDir.resolve("cache");
+        Path attacker = tempDir.resolve("attacker.so");
+        byte[] payload = "trusted-native-bytes".getBytes(StandardCharsets.UTF_8);
+        byte[] hostile = "hostile-native-bytes".getBytes(StandardCharsets.UTF_8);
+        Files.write(attacker, hostile);
+
+        String digest = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(payload));
+        Path target = cacheDir.resolve("liblattice.so." + digest.substring(0, 16));
+        Files.createDirectories(cacheDir);
+        try {
+            Files.createSymbolicLink(target, attacker);
+        } catch (IOException | UnsupportedOperationException cannotSymlink) {
+            return; // e.g. unprivileged Windows; the no-follow check is exercised elsewhere
+        }
+
+        String previous = System.getProperty("lattice.native.cacheDir");
+        System.setProperty("lattice.native.cacheDir", cacheDir.toString());
+        try {
+            Path extracted = LatticeNativeLoader.extractToCache("liblattice.so",
+                    new ByteArrayInputStream(payload), digest);
+            assertTrue(Files.isRegularFile(extracted, LinkOption.NOFOLLOW_LINKS),
+                    "extracted entry must be a regular file, not a symlink");
+            assertArrayEquals(payload, Files.readAllBytes(extracted));
+            assertArrayEquals(hostile, Files.readAllBytes(attacker),
+                    "the symlink target must not have been written through");
+        } finally {
+            if (previous == null) System.clearProperty("lattice.native.cacheDir");
+            else System.setProperty("lattice.native.cacheDir", previous);
+        }
     }
 }

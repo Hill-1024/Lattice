@@ -70,11 +70,15 @@ Java_com_latticemc_lattice_nativelib_NativeOctavePerlinNoise_nativeCreate(
         return 0;
     }
     const std::size_t N = static_cast<std::size_t>(amp_len);
-    if (env->GetArrayLength(jOrigins) != static_cast<jsize>(N * 3)) {
+    const std::size_t origins_len = lattice::jni::checked_count(N, 3);
+    const std::size_t perms_len = lattice::jni::checked_count(N, 256);
+    if (origins_len == lattice::jni::kCountOverflow
+            || !lattice::jni::array_has_length(env, jOrigins, origins_len)) {
         lattice::jni::throw_illegal_arg(env, "lattice octave: origins must be 3*N doubles");
         return 0;
     }
-    if (env->GetArrayLength(jPermutations) != static_cast<jsize>(N * 256)) {
+    if (perms_len == lattice::jni::kCountOverflow
+            || !lattice::jni::array_has_length(env, jPermutations, perms_len)) {
         lattice::jni::throw_illegal_arg(env, "lattice octave: permutations must be 256*N bytes");
         return 0;
     }

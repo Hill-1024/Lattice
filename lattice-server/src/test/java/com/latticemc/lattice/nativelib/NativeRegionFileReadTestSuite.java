@@ -3,6 +3,7 @@ package com.latticemc.lattice.nativelib;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -51,5 +52,24 @@ class NativeRegionFileReadTestSuite {
         reader.close();
         reader.close();
         assertThrows(IOException.class, () -> reader.readAt(destination, 0, 1, 0));
+    }
+
+    @Test
+    void openRejectsPathsOutsideTheAllowedRoot(@TempDir Path directory) throws IOException {
+        Path root = directory.resolve("world");
+        Files.createDirectories(root);
+        Files.write(root.resolve("region.mca"), new byte[16]);
+
+        Path outside = directory.resolve("secret.txt");
+        Files.write(outside, new byte[16]);
+
+        // Path containment is decided before any native call, so this must hold
+        // whether or not the native library is loaded (audit finding V13).
+        assertNull(NativeRegionFileRead.open(outside, root));
+    }
+
+    @Test
+    void openRejectsUnresolvablePath(@TempDir Path directory) {
+        assertNull(NativeRegionFileRead.open(directory.resolve("missing.mca"), directory));
     }
 }

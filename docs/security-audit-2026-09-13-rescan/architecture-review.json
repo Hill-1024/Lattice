@@ -1,0 +1,281 @@
+{
+  "threatModel": {
+    "summary": "Lattice is a Java 21 Minecraft server fork of Purpur/Paper with C++20 JNI acceleration, distributed as a patched Paperclip JAR plus platform-specific native libraries (README.md:9-25, README.md:39-80). Paperweight composes upstream Purpur and Lattice source/feature patches (build.gradle.kts:11-36; lattice-server/build.gradle.kts:22-59). Both CraftBukkit main and MinecraftServer runServer invoke an idempotent bootstrap that preloads startup configuration before loading native code (lattice-server/paper-patches/features/0002-feat-initialize-Lattice-native-acceleration-at-start.patch:14-17; lattice-server/minecraft-patches/features/0002-Accelerate-palette-storage-and-region-file-I-O-with-.patch:15-19; lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeBootstrap.java:16-28). Server simulation and chunk persistence invoke Java wrappers and JNI; runtime acceleration controls are exposed through a permission-checked Bukkit command. Build, native publication, scheduled upstream updates, optional benchmark clients, and private PGO are separate operator/developer workflows. This model is offline source architecture analysis, not completed vulnerability validation.",
+    "assets": [
+      "Server process integrity and all files accessible to its OS account: native libraries execute inside the JVM through System.load, including an explicit trusted-administrator override (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:122-160).",
+      "Native executable authenticity and extraction-cache integrity. The loaded file is <cache>/<platform-lib-name>.<first-16-hex-of-full-SHA256>; the full digest is checked on reuse and after extraction (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:361-398).",
+      "World/chunk persistence integrity and server availability across RegionFile reads and zlib compression. Native positioned reads use a separate read-only OS handle; the Java RegionFile retains write/force/close ordering (lattice-server/minecraft-patches/features/0100-feat-region-use-native-positioned-payload-reads.patch:88-112,118-162; lattice-native/jni/native_region_file_read.cpp:123-157).",
+      "In-memory entity state, player-specific visibility, native allocation lifetime, and JVM stability. JNI transfers primitive arrays and owned direct buffers, while entity tracking retains Java visibility decisions after native distance prefiltering (lattice-native/jni/jni_helper.hpp:103-164; lattice-server/minecraft-patches/features/0007-Accelerate-tracked-entity-visibility-checks-with-nat.patch:25-70; lattice-server/minecraft-patches/features/0103-Use-ChunkMap-specific-visibility-check.patch:12-18).",
+      "Repository contents, released server JARs, native release assets, and CI publication authority. Build execution uses contents:read; separate publication jobs use contents:write ( .github/workflows/build.yml:31-35,151-176; .github/workflows/native.yml:16-17,257-318).",
+      "Administrator-controlled startup settings in <server-working-directory>/lattice.yml, JVM properties, optional native-library path/digest, and runtime acceleration/profiling controls (lattice-server/src/main/java/com/latticemc/lattice/config/LatticeConfig.java:25-47,106-163; lattice-server/src/main/java/com/latticemc/lattice/command/LatticeDensityCommand.java:32-66)."
+    ],
+    "trustBoundaries": [
+      "Server operator -> bootstrap: valid explicit JVM properties take precedence over lattice.yml, followed by defaults; invalid explicit values fall back to YAML/defaults. Bootstrap runs configuration before static native consumers initialize. Configuration-file permissions are host-owned rather than a Lattice authorization boundary (lattice-server/src/main/java/com/latticemc/lattice/config/LatticeConfig.java:116-163; lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeBootstrap.java:16-21).",
+      "Classpath/build publisher -> native executable: the normal path loads META-INF/native/<os>-<arch>/<libname>, then a root-classpath <libname> fallback. The build bundles only its current host-platform library. Classpath content is trusted executable supply-chain input; extraction hashing protects cache consistency but does not independently authenticate a malicious JAR (build.gradle.kts:95-114,180-185; lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:142-174,361-398).",
+      "Release origin -> native executable: only when both bundled resources are absent and downloads are enabled, the loader resolves releaseBaseUrl/release/asset and requires a locally trusted SHA-256. Default URL is https://github.com/LatticeMC/Lattice/releases/download/native-latest/lattice-native-<os>-<arch>.<ext>. HTTPS, up to five redirects, allowed GitHub/CDN redirect hosts, and digest equality are enforced unless the operator enables the documented insecure-transport override. The built-in digest map is currently empty, so default unbundled downloads refuse to load without an operator pin (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:29-60,178-244,273-350).",
+      "Local filesystem actors -> executable cache: default cache is <java.io.tmpdir>/lattice-native-<sanitized-user.name>, with an administrator cacheDir override. The final directory must not itself be a symlink; POSIX 0700 is attempted, but permission-setting failures are ignored and no Windows ACL is set. Target files are content-addressed, checked without following a target symlink on reuse, and moved from a same-directory temporary file before post-write hashing. Effective parent-directory ownership and filesystem ACLs remain deployment prerequisites (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:361-428).",
+      "Players/world state -> Java acceleration wrappers -> native memory: player positions and world-derived arrays reach JNI operations through server patches. JNI owns array validation, conversion, native lifetime, and Java error translation; Java fallback is availability/semantic handling, not process isolation. In-process plugins already share server authority and must not be modeled as sandboxed callers (README.md:20-24; lattice-native/jni/jni_helper.hpp:29-84,103-164; lattice-server/minecraft-patches/features/0007-Accelerate-tracked-entity-visibility-checks-with-nat.patch:25-70).",
+      "Entity distance prefilter -> player-visible tracking: native scanning only narrows candidates, then updatePlayer retains broadcastToPlayer, chunk tracking, and Bukkit visibility checks. CraftPlayer uses visibleByDefault and per-player inverted visibility state. Native proximity must never replace those authorization decisions (lattice-server/minecraft-patches/features/0007-Accelerate-tracked-entity-visibility-checks-with-nat.patch:41-54; lattice-server/minecraft-patches/features/0103-Use-ChunkMap-specific-visibility-check.patch:12-18; lattice-server/paper-patches/features/0004-Optimize-CraftPlayer-canSee-checks.patch:20-22).",
+      "RegionFile caller -> native filesystem handle: production integration passes its existing path to open(path), which delegates to open(path,null), so the optional allowedRoot containment check is not used by this integration. Canonicalization, platform support, native availability, range checks, synchronized read/close, and OS read-only access are component controls. Provenance of the region path remains the upstream RegionFile caller's responsibility (lattice-server/minecraft-patches/features/0100-feat-region-use-native-positioned-payload-reads.patch:25-41,108-112; lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeRegionFileRead.java:26-65,75-103; lattice-native/jni/native_region_file_read.cpp:123-137).",
+      "Chunk bytes -> compression/parser allocations: native region inflation is disabled by default; enabling it buffers the compressed source and calls the default 64 MiB inflated-output limit. Deflation is used whenever native acceleration is loaded and buffers output until close. NBT index code is compiled/exported, but the current Java NativeChunkSerializer deliberately declares only zlib JNI methods, so the native NBT parser is not established as a production Java entry point (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/NativeZlibStreams.java:15-49,61-70,103-135; lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeChunkSerializer.java:14-33,117-119; lattice-native/CMakeLists.txt:342-349).",
+      "Command sender -> runtime administration: /lattice has permission lattice.command, execute calls testPermission before reading/changing controls, and tab completion calls testPermissionSilent. Bukkit is the permission enforcer; installed permission-plugin behavior and effective grants are deployment-owned (lattice-server/src/main/java/com/latticemc/lattice/command/LatticeDensityCommand.java:32-53,95-143).",
+      "Repository/build inputs -> publishing authority: pull requests run read-only build jobs; server publishing requires a successful default-branch push build. Native publishing requires successful matrix builds and either default-branch push or explicit workflow_dispatch publish_release, validates the exact expected eight binaries plus checksum files, then writes native-<sha> and native-latest releases. Scheduled upstream updates separately fetch Purpur refs, apply/build patches, commit, and push under contents:write ( .github/workflows/build.yml:151-176; .github/workflows/native.yml:257-318; .github/workflows/upstream.yml:3-46; scripts/updateUpstream.sh:9-19)."
+    ],
+    "attackerCapabilities": [
+      "A remote player may supply gameplay inputs and influence entity/world state permitted by the inherited server protocol. This does not imply control of JNI handles, native-library configuration, local region-file paths, arbitrary Java method arguments, or installed plugins; each stronger reachability claim requires a concrete caller trace.",
+      "A supplied-world author or actor able to alter region files can affect persisted compressed chunk input if the operator later opens those worlds. Actual upload/import mechanisms and exposure are not established by the inspected source.",
+      "A native download origin or network attacker can affect downloaded bytes only subject to TLS and the locally pinned digest. They do not initially control the administrator's trusted digest, bundled JAR, JVM properties, or override path.",
+      "A different local OS user may influence a shared temporary directory only where host permissions permit it; same-user process or administrator control is not a new privilege boundary. Cache attacks require concrete ownership/ACL and race prerequisites.",
+      "A pull-request author can change source processed by read-only PR jobs, but is not automatically a release publisher. Repository writers, authorized workflow-dispatch users, upstream maintainers, and package publishers carry separate supply-chain authority.",
+      "An installed in-process Bukkit plugin is already trusted code with server-process authority. A malicious plugin's ability to call native functions or alter system properties alone does not establish escalation."
+    ],
+    "securityObjectives": [
+      "Only operator-trusted native code should execute; preserve the local digest requirement on unbundled downloads, explicit nature of direct-path override, and cache integrity checks (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:122-132,188-224,361-398).",
+      "Malformed or excessive world-derived inputs must not corrupt native memory, invalidate allocation lifetimes, or cause avoidable server-wide resource exhaustion. Maintain overflow-safe array checks and explicit JNI error handling while preserving Java/native semantics (lattice-native/jni/jni_helper.hpp:29-84; lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeChunkSerializer.java:22-38).",
+      "Preserve persisted chunk format, filesystem write ownership, synchronized region-handle lifetime, and Java fallback behavior across unsupported platforms and disabled optional acceleration (lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeRegionFileRead.java:9-13,37-103; lattice-server/src/main/java/com/latticemc/lattice/bootstrap/NativeZlibStreams.java:33-49).",
+      "Preserve per-player entity visibility and restrict runtime administrative controls to authorized command senders (lattice-server/minecraft-patches/features/0103-Use-ChunkMap-specific-visibility-check.patch:12-18; lattice-server/src/main/java/com/latticemc/lattice/command/LatticeDensityCommand.java:32-53).",
+      "Bind published artifacts to the intended successful build and keep PR build authority distinct from release/repository write authority; preserve explicit separation of private PGO artifact names and normal public native assets ( .github/workflows/build.yml:151-176; .github/workflows/native.yml:257-318; lattice-native/CMakeLists.txt:152-158,256-264).",
+      "User-supplied objective: inspect vulnerabilities, record/report substantiated issues with solutions, and identify dead code. Architecture observations and unreachable/native-only code are not themselves validated vulnerabilities."
+    ],
+    "assumptions": [
+      "No deployment model or authoritative security knowledge was supplied. The nested policy resolver returned no policy for lattice-server, lattice-native, .github, test-plugin, or scripts. Host permissions, network exposure, server authentication mode, actual plugins, and production world-import provenance remain unspecified.",
+      "Patch-composed upstream functionality is modeled from inspected repository patch evidence, not a fully applied or executed Minecraft/Paper server. Full login/session/network parsing behavior and exact world-root construction were not established by this bounded pass.",
+      "Loader documentation discrepancy: its comment says release pipelines populate BUILT_IN_RELEASE_DIGESTS, while the source map is empty and inspected Gradle/resource and release workflows only bundle, stage, checksum, and publish libraries. No digest-map generation was found. Consequently the code-established default for an unbundled platform is refusing download until an operator supplies a trusted digest (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:53-60,197-200; build.gradle.kts:180-185; .github/workflows/native.yml:220-255,271-318).",
+      "Cache ownership caveat: the source calls its default a per-user directory, but this is a username-derived child of java.io.tmpdir; uniqueness of the path is not an access-control guarantee. POSIX hardening failures are ignored and Windows ACLs are not implemented (lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:409-428).",
+      "PGO documentation is consistent with inspected output naming/defaults: explicit GENERATE/USE modes produce distinct library names and cannot be installed; normal Gradle packaging references lattice rather than those names. Private PGO loading uses the already-trusted explicit native path override (README.md:100-106,128-153; lattice-native/CMakeLists.txt:41-47,152-158,256-264; build.gradle.kts:109-114).",
+      "Native positioned read is disabled by default and its Java platform gate excludes FreeBSD even though the general loader supports FreeBSD. Its optional allowedRoot check is not evidence that the production RegionFile call is constrained to a separate root (lattice-server/src/main/java/com/latticemc/lattice/config/LatticeConfig.java:47; lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeRegionFileRead.java:26-57,100-103; lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:64-69).",
+      "The optional activation benchmark is a separate source set and MCProtocolLib dependency, not part of the plugin JAR (test-plugin/build.gradle.kts:9-25). Its README describes loopback connections, but --host accepts any nonblank string; 'offline-only' means no Mojang/Microsoft authentication, not enforced network locality. Operators select the destination and output file (test-plugin/activation-bench/README.md:3-5; test-plugin/src/activation-bench/java/org/purpurmc/testplugin/activationbench/ActivationBenchBotRunner.java:67-79,296-343).",
+      "README broadly lists NBT acceleration, but current Java NativeChunkSerializer excludes NBT indexing while native NBT implementation remains compiled. Distinguish exported/build-linked code from reachable production Java APIs when assessing dead code or impact (README.md:84-88; lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeChunkSerializer.java:14-18,117-119; lattice-native/CMakeLists.txt:342-349)."
+    ]
+  },
+  "effectiveResources": [
+    {
+      "consumer": "LatticeConfig.preload",
+      "deployment": "Normal server startup",
+      "configurationChain": "Valid explicit JVM property > lattice.yml value > built-in default",
+      "effectiveValue": "<server-working-directory>/lattice.yml; auto-created when absent",
+      "recipients": "Server startup settings and static acceleration consumers",
+      "enforcingControl": "Typed setting parsing and bootstrap ordering; filesystem permissions are host-owned",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/config/LatticeConfig.java:25,106-163",
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeBootstrap.java:16-21"
+      ]
+    },
+    {
+      "consumer": "System.load",
+      "deployment": "Explicit administrator override, including private PGO",
+      "configurationChain": "lattice.native.path / native.library-path resolves before platform/bundle/download paths",
+      "effectiveValue": "Exact operator-supplied absolute native-library path",
+      "recipients": "Native code executes inside the server JVM with server OS privileges",
+      "enforcingControl": "Explicit trusted-operator configuration; JVM System.load path requirements; bypass is logged",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/config/LatticeConfig.java:32",
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:122-133"
+      ]
+    },
+    {
+      "consumer": "Classpath native library extraction",
+      "deployment": "Normal bundled library",
+      "configurationChain": "Detected platform -> META-INF/native/<platform>/<libname> -> root-classpath <libname> fallback",
+      "effectiveValue": "liblattice.so on Linux/FreeBSD, liblattice.dylib on macOS, lattice.dll on Windows; x86_64 or aarch64; current Gradle build bundles only its host platform",
+      "recipients": "Server JVM through extraction cache and System.load",
+      "enforcingControl": "Trusted JAR supply chain, content hashing, cache verification",
+      "evidence": [
+        "build.gradle.kts:95-114,180-185",
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:64-95,142-174,361-398"
+      ]
+    },
+    {
+      "consumer": "downloadReleaseNative",
+      "deployment": "Supported platform absent from classpath and downloads enabled",
+      "configurationChain": "releaseBaseUrl + normalized release + generated asset; built-in asset digest first, operator digest second",
+      "effectiveValue": "Default https://github.com/LatticeMC/Lattice/releases/download/native-latest/lattice-native-<os>-<arch>.<ext>; no download permitted by current empty built-in map unless operator supplies SHA-256",
+      "recipients": "Initial configured HTTP(S) origin and permitted redirect destinations; downloaded bytes become native executable only after digest verification",
+      "enforcingControl": "Local SHA-256 trust anchor; HTTPS by default; redirect cap/host allowlist; connection/read timeouts",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:29-60,178-244,277-350"
+      ],
+      "documentedClaim": "Release pipelines populate built-in digest map",
+      "discrepancy": "Map is empty and inspected build/publish paths contain no population step",
+      "missingImpactPrerequisite": "Availability concern for an unbundled platform; this discrepancy does not bypass the fail-closed trust check"
+    },
+    {
+      "consumer": "extractToCache and System.load",
+      "deployment": "Default POSIX cache",
+      "configurationChain": "native.cache-directory / lattice.native.cacheDir override, otherwise java.io.tmpdir + sanitized user.name",
+      "effectiveValue": "<java.io.tmpdir>/lattice-native-<sanitized-user.name>/<libname>.<SHA256-prefix-16>; override uses the same child naming",
+      "recipients": "Server process; other local users only according to effective parent/file permissions",
+      "enforcingControl": "Reject final cache-directory symlink; attempt 0700; no-follow regular-file check on reuse; full digest verification; temporary write and move",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:361-428"
+      ],
+      "discrepancy": "Permission-setting errors are ignored, so per-user naming alone does not establish exclusive access",
+      "missingImpactPrerequisite": "Actual java.io.tmpdir, ownership, parent permissions and attacker ability to mutate cache entries"
+    },
+    {
+      "consumer": "extractToCache and System.load",
+      "deployment": "Windows cache",
+      "configurationChain": "Same Java cacheDir override/default chain",
+      "effectiveValue": "<java.io.tmpdir>\\lattice-native-<sanitized-user.name>\\lattice.dll.<SHA256-prefix-16>",
+      "recipients": "Server process and actors permitted by inherited Windows ACLs",
+      "enforcingControl": "Hash and move controls; no Windows ACL setter is present",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:64-69,361-428"
+      ],
+      "missingImpactPrerequisite": "Effective Windows temp-directory ACLs and ownership"
+    },
+    {
+      "consumer": "NativeRegionFileRead.nativeOpen/readAt",
+      "deployment": "Experimental native.io.positioned-read=true on Windows/Linux/macOS",
+      "configurationChain": "RegionFile-owned path -> open(path) -> open(path,null) -> toRealPath -> nativeOpen",
+      "effectiveValue": "Canonical existing RegionFile path; native payload reads only for >=4096 bytes at sectorNumber*4096+5",
+      "recipients": "Server process obtains GENERIC_READ Windows handle or POSIX O_RDONLY descriptor",
+      "enforcingControl": "Canonicalization, Java array/position checks, synchronized read/close, JNI repeated bounds checks, OS read-only access",
+      "evidence": [
+        "lattice-server/minecraft-patches/features/0100-feat-region-use-native-positioned-payload-reads.patch:23-41,88-112",
+        "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeRegionFileRead.java:26-65,75-103",
+        "lattice-native/jni/native_region_file_read.cpp:49-66,123-137"
+      ],
+      "missingImpactPrerequisite": "The supplied patch does not establish the upstream world-root derivation or an untrusted path-input route"
+    },
+    {
+      "consumer": "NativeZlibStreams -> NativeChunkSerializer",
+      "deployment": "Region compression type 2",
+      "configurationChain": "Native loaded enables deflater; lattice.nativeRegionZlibInflate defaults false and independently gates inflater",
+      "effectiveValue": "Deflate level 6; optional native inflation default maximum output 64 MiB; streams buffer compressed input or uncompressed write data",
+      "recipients": "Java/native buffers and RegionFile output stream",
+      "enforcingControl": "Explicit inflate opt-in, configured output ceiling in helper, Java fallback and error translation",
+      "evidence": [
+        "lattice-server/minecraft-patches/features/0002-Accelerate-palette-storage-and-region-file-I-O-with-.patch:51-62",
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/NativeZlibStreams.java:15-49,61-70,103-135",
+        "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeChunkSerializer.java:22-38,61-76"
+      ]
+    },
+    {
+      "consumer": "LatticeDensityCommand.execute",
+      "deployment": "Running server with Bukkit command map",
+      "configurationChain": "Registered /lattice or latticecore -> Bukkit permission lattice.command -> parsed operation",
+      "effectiveValue": "Runtime density/pathfinder switches and profiling counters; status sent to command sender",
+      "recipients": "Authorized command sender and shared server runtime",
+      "enforcingControl": "testPermission before execution; testPermissionSilent for completion",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/command/LatticeDensityCommand.java:32-66,95-143"
+      ]
+    },
+    {
+      "consumer": "GitHub release publishers",
+      "deployment": "Server build and native workflows",
+      "configurationChain": "Successful build artifacts -> separate gated contents:write job -> configured release actions",
+      "effectiveValue": "Server release v<mc-version>-b<run-number>; native releases native-<github.sha> and native-latest; native publication expects eight binaries plus eight SHA-256 files",
+      "recipients": "Public GitHub release audience; release action receives job publication authority",
+      "enforcingControl": "Job-level permissions, event/ref gates, build dependencies, exact asset/checksum validation, pinned action commits",
+      "evidence": [
+        ".github/workflows/build.yml:151-176",
+        ".github/workflows/native.yml:257-318"
+      ],
+      "documentedClaim": "One native release step is named immutable",
+      "discrepancy": "That step uses a commit-derived tag but overwrite_files=true; literal immutability is not enforced by this setting"
+    },
+    {
+      "consumer": "Scheduled upstream update",
+      "deployment": "GitHub scheduled workflow",
+      "configurationChain": "Purpur ver/1.21.11 remote ref -> gradle.properties -> patch/build/rebuild -> git commit -> plain git push",
+      "effectiveValue": "Checked-out repository branch content updated from Purpur; scheduled job receives contents:write",
+      "recipients": "Repository and downstream builders/releases",
+      "enforcingControl": "Build chain must succeed; plain push refuses non-fast-forward; upstream source remains a trusted supply-chain dependency",
+      "evidence": [
+        ".github/workflows/upstream.yml:3-46",
+        "scripts/updateUpstream.sh:9-19"
+      ]
+    },
+    {
+      "consumer": "Private native PGO build",
+      "deployment": "Explicit Linux x86_64 or experimental Windows x86_64",
+      "configurationChain": "LATTICE_PGO_MODE=GENERATE/USE; USE resolves LATTICE_PGO_PROFILE relative to native source directory then real path",
+      "effectiveValue": "lattice-pgo-generate or lattice-pgo-use native library; .profdata input is operator-chosen; normal public name remains lattice",
+      "recipients": "Local compiler and operator-selected server override path",
+      "enforcingControl": "Single-config Release Clang/x86_64/LTO restrictions; nonempty .profdata checks; private installation rejection; separate output names",
+      "evidence": [
+        "lattice-native/CMakeLists.txt:63-94,105-158,256-264",
+        "README.md:128-153"
+      ]
+    },
+    {
+      "consumer": "ActivationBenchBotRunner",
+      "deployment": "Optional standalone developer benchmark",
+      "configurationChain": "CLI --host/--port/--bots/--output -> Config -> run -> optional JSON write",
+      "effectiveValue": "Default destination 127.0.0.1:25565; configurable nonblank host; up to 100 bots; no output file unless --output supplied, then exact supplied path",
+      "recipients": "Operator-selected Minecraft server, stdout, and optional local output file",
+      "enforcingControl": "Argument/range validation; authentication flags rejected; OS permissions govern output; no loopback restriction",
+      "evidence": [
+        "test-plugin/build.gradle.kts:9-25",
+        "test-plugin/src/activation-bench/java/org/purpurmc/testplugin/activationbench/ActivationBenchBotRunner.java:67-79,296-358"
+      ],
+      "documentedClaim": "README calls these loopback connections",
+      "discrepancy": "Only the default destination is loopback; --host permits arbitrary nonblank destinations"
+    }
+  ],
+  "resolved_questions": [
+    {
+      "question": "Does missing bundled native code automatically trust a release-side checksum?",
+      "resolution": "No. Current loader requires a locally pinned digest, does not use the adjacent checksum as its trust anchor, and refuses download when no built-in/operator pin exists.",
+      "evidence": ["lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:188-224"]
+    },
+    {
+      "question": "Is a release pipeline shown populating the loader's claimed embedded digest manifest?",
+      "resolution": "No such step was found in the inspected source/build/workflows. Retain both the source comment and empty-map/build evidence as a discrepancy rather than assuming a generated manifest exists.",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:53-60",
+        "build.gradle.kts:180-185",
+        ".github/workflows/native.yml:220-255,271-318"
+      ]
+    },
+    {
+      "question": "Is native region-file access confined by the optional allowedRoot parameter?",
+      "resolution": "The public helper supports it, but production RegionFile integration calls the no-root overload. This is an internal caller contract, not evidence of an externally exposed arbitrary-file read.",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeRegionFileRead.java:26-57",
+        "lattice-server/minecraft-patches/features/0100-feat-region-use-native-positioned-payload-reads.patch:41"
+      ]
+    },
+    {
+      "question": "Does native entity visibility replace Bukkit visibility authorization?",
+      "resolution": "No. Native coarse candidates feed updatePlayer, which retains broadcast/chunk checks and the specialized CraftPlayer visibility test.",
+      "evidence": [
+        "lattice-server/minecraft-patches/features/0007-Accelerate-tracked-entity-visibility-checks-with-nat.patch:41-54",
+        "lattice-server/minecraft-patches/features/0103-Use-ChunkMap-specific-visibility-check.patch:12-18",
+        "lattice-server/paper-patches/features/0004-Optimize-CraftPlayer-canSee-checks.patch:20-22"
+      ]
+    },
+    {
+      "question": "Are native inflation and native positioned reads enabled by default?",
+      "resolution": "Both are independently disabled by default; native deflation remains used when the native library is loaded.",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/config/LatticeConfig.java:47,89",
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/NativeZlibStreams.java:33-49"
+      ]
+    },
+    {
+      "question": "Is compiled native NBT indexing currently a production Java API?",
+      "resolution": "Not established. NBT parser/JNI translation unit is compiled, but the current NativeChunkSerializer Java class explicitly excludes NBT indexing and declares only two zlib natives. This is relevant to reachability/dead-code classification, not automatically a vulnerability.",
+      "evidence": [
+        "lattice-native/CMakeLists.txt:342-349",
+        "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeChunkSerializer.java:14-18,117-119",
+        "lattice-native/jni/chunk_serializer.cpp:433,527"
+      ]
+    },
+    {
+      "question": "Does the optional benchmark enforce loopback-only networking?",
+      "resolution": "No. The README describes loopback use, while the parser accepts arbitrary nonblank --host. Offline-only refers to absent Mojang/Microsoft authentication. Operator-selected destination access is not escalation by itself.",
+      "evidence": [
+        "test-plugin/activation-bench/README.md:3-5",
+        "test-plugin/src/activation-bench/java/org/purpurmc/testplugin/activationbench/ActivationBenchBotRunner.java:296-343"
+      ]
+    },
+    {
+      "question": "Are native cache permissions fully controlled on every platform?",
+      "resolution": "No universal guarantee is established. The default is a username-derived child of java.io.tmpdir; POSIX 0700 setting can fail without aborting, and Windows uses inherited ACLs. Retain actual host ownership/ACLs as unresolved deployment facts.",
+      "evidence": ["lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java:409-428"]
+    }
+  ]
+}

@@ -174,8 +174,8 @@ set(LIBDEFLATE_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     libdeflate
     GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
-    GIT_TAG        v1.20
-    GIT_SHALLOW    TRUE
+    # v1.20, pinned to the commit (tags are mutable; see docs/security-audit-2026-09-13.md V12)
+    GIT_TAG        275aa5141db6eda3587214e0f1d3a134768f557d
 )
 FetchContent_MakeAvailable(libdeflate)
 
@@ -189,8 +189,8 @@ if(LATTICE_BUILD_TESTS)
     FetchContent_Declare(
         doctest
         GIT_REPOSITORY https://github.com/doctest/doctest.git
-        GIT_TAG        v2.4.11
-        GIT_SHALLOW    TRUE
+        # v2.4.11, pinned to the commit (tags are mutable; see docs/security-audit-2026-09-13.md V12)
+        GIT_TAG        ae7a13539fb71f270b87eb2e874fbac80bc8dda2
     )
     FetchContent_MakeAvailable(doctest)
 endif()

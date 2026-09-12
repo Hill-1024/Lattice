@@ -1,0 +1,196 @@
+{
+  "scope": [
+    "native IO/parsing/JNI boundaries",
+    "lattice-native/tests/** and lattice-server/src/test/** targeted support review"
+  ],
+  "mode": "Source-only, offline; no compilation/test execution/network or source modifications. Artifact write requested by parent.",
+  "findings": [
+    {
+      "id": "NATIVE-IO-01",
+      "title": "Dormant NBT parser mutates freed Frame after frame-stack growth",
+      "cwe": "CWE-416",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed dormant native defect; no current production Java invocation",
+      "root_cause": "parse_impl retains Frame& top, push_frame allocates/copies/frees stack, then nested LIST/COMPOUND list branches decrement top.list_remaining through invalidated reference.",
+      "evidence": [
+        {
+          "path": "lattice-native/src/io/nbt/nbt_parser.cpp",
+          "lines": "283-294",
+          "snippet": "std::memcpy(fresh, stack, stack_size * sizeof(Frame)); if (stack != inline_stack) std::free(stack); stack = fresh;"
+        },
+        {
+          "path": "lattice-native/src/io/nbt/nbt_parser.cpp",
+          "lines": "328,380-385,429-434",
+          "snippet": "Frame& top = stack[stack_size - 1]; ... push_frame(f) ... --top.list_remaining;"
+        }
+      ],
+      "dataflow": "Nested input -> parse/validate -> stack migration. 64->128 writes old inline copy and corrupts remaining count; 128->256 or 256->512 writes freed heap storage.",
+      "counterevidence": [
+        "CMakeLists.txt:344-348 includes parser/JNI in shared library, JNIEXPORT exposes parse/free symbols.",
+        "NativeChunkSerializer.java has only inflate/deflate declarations and deliberately excludes NBT integration.",
+        "No current remote/server input path to NBT parser; privileged plugin/native invocation is not a vulnerability boundary."
+      ],
+      "remediation": "Mutate parent before push_frame, or retain index and reacquire parent after growth. Add sanitizer tests around 64,128,256 list parents. Exclude dormant NBT JNI until safely integrated."
+    }
+  ],
+  "hardening_observations": [
+    {
+      "title": "Heightmap short storage/invalid bit width can cause native OOB on direct API input",
+      "cwe": "CWE-125",
+      "status": "No untrusted production path established",
+      "paths": [
+        "lattice-native/jni/heightmap.cpp",
+        "lattice-native/src/world/heightmap/heightmap_scan.cpp",
+        "lattice-native/src/world/heightmap/heightmap_scan_avx2.cpp",
+        "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeHeightmap.java"
+      ],
+      "details": "storage_longs is populated but ignored by kernels; bits not range-checked, mask-array product uses int. Production WorldgenNativeSupport receives Minecraft BitStorage invariants.",
+      "remediation": "Check widened mask product, legal bits and required 4096-cell storage length; enforce storage_longs in kernels."
+    },
+    {
+      "title": "NBT depth wraps at 256",
+      "paths": [
+        "lattice-native/src/io/nbt/nbt_parser.hpp:26,118",
+        "lattice-native/src/io/nbt/nbt_parser.cpp:139,355-357,509-511"
+      ],
+      "details": "uint8_t depth cannot encode default maxDepth=512; stack capacity still bounds traversal.",
+      "remediation": "Widen depth and version index format, or cap advertised supported depth."
+    },
+    {
+      "title": "Dormant random-tick JNI misses candidates length check",
+      "paths": [
+        "lattice-native/jni/tick.cpp:37-48,175-186",
+        "lattice-native/src/world/tick/random_tick_filter.cpp:43-44"
+      ],
+      "details": "candidateCount checked against output but not input length; no matching NativeRandomTickFilter Java class/callsite.",
+      "remediation": "Validate input length or remove dormant JNI."
+    },
+    {
+      "title": "Native inflate checked exception bypasses intended stream mapping",
+      "paths": [
+        "lattice-native/jni/chunk_serializer.cpp:77-79",
+        "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/NativeZlibStreams.java:20-30,65-69"
+      ],
+      "details": "JNI directly throws DataFormatException; adapter catches RuntimeException only. Correctness issue, no demonstrated security impact.",
+      "remediation": "Declare/catch DataFormatException then translate to ZipException."
+    }
+  ],
+  "resolved_questions": [
+    "Native inflation default cap is 64 MiB, bounded by supplied maxOutputBytes; native inflation is opt-in. Compressed readAllBytes remains uncapped, external .mcc upstream limits not fully reviewed.",
+    "NBT index failure paths delete allocations; mutex registry rejects unknown free addresses. Java ownership integration absent. Future wrappers need direct-buffer lifetime/revocation discipline.",
+    "NativeRegionFileRead Java synchronizes readAt/close and zeroes handle before nativeClose; normal public wrapper prevents close/read UAF. Destination and positions are validated.",
+    "NativeRegionFileRead public Java arbitrary-file reads are not a privilege boundary under arbitrary-JVM-plugin trust model.",
+    "Palette JNI input windows validate bits, storage size, offset/count and overflow. Packed SIMD implementations not fully read here.",
+    "Noise Cleaner/raw-handle last-use concern passed to world_kernels for ownership review."
+  ],
+  "dead_code_candidates": [
+    {
+      "paths": [
+        "lattice-native/jni/chunk_serializer.cpp",
+        "lattice-native/src/io/nbt/nbt_parser.cpp"
+      ],
+      "details": "nativeInflateZlibInto/nativeZlibCompressBound/nativeParseNbtIndex/nativeFreeNbtIndex lack Java declarations; NBT calls outside implementation are dormant JNI/tests. Compiled unused production code, not linker-proven dead."
+    },
+    {
+      "paths": [
+        "lattice-native/jni/tick.cpp",
+        "lattice-native/src/world/tick/random_tick_filter.cpp"
+      ],
+      "details": "No NativeRandomTickFilter Java class or production consumer."
+    }
+  ],
+  "test_support_findings": [],
+  "test_coverage_observations": [
+    {
+      "path": "lattice-native/tests/test_nbt_parser.cpp",
+      "lines": "86-104,159-170",
+      "details": "Only scalar list<int> and depth=1 rejection. No list-container stack-growth tests at 64/128/256, no index-depth 255/256 boundary tests, no JNI direct-buffer ownership tests. Existing tests do not catch NATIVE-IO-01.",
+      "recommendation": "Construct compound parents through first growth then nested-list parent at heap-capacity transition; run both parse/validate under ASan/UBSan and verify tag counts/consumed bytes. Separately test list parent exactly at 64."
+    },
+    {
+      "path": "lattice-native/tests/CMakeLists.txt",
+      "lines": "18-41,166-169",
+      "details": "Tests compile kernel source directly and omit JNI wrappers; test flags deliberately permit exceptions. CTest success cannot establish JNI length/lifetime safety or complete production-flag parity."
+    },
+    {
+      "path": "lattice-native/tests/test_jni_bounds.cpp",
+      "details": "Tests checked_count helper only; no concrete JNI array entrypoints."
+    },
+    {
+      "path": "lattice-native/tests/test_heightmap.cpp",
+      "details": "Tests only valid correctly sized storage, including 4-bit/9-bit parity. No short storage or invalid bits tests."
+    },
+    {
+      "path": "lattice-native/tests/test_zlib_codec.cpp",
+      "details": "Covers malformed header/truncation/checksum/short output/output ceiling; does not cover native Java exception translation or nativeInflateZlibToNewArray."
+    },
+    {
+      "path": "lattice-server/src/test/java/com/latticemc/lattice/nativelib/NativeRegionFileReadTestSuite.java",
+      "details": "Range/EOF/idempotent close covered if artifact loads; test returns early when native absent, so passing suite may not exercise native reader. Files confined to @TempDir."
+    },
+    {
+      "path": "lattice-server/src/test/java/com/latticemc/lattice/bootstrap/LatticeNativeLoaderTestSuite.java",
+      "details": "Checksum/config URL/redirect helper and pre-existing symlink cache extraction fixtures use dummy bytes and @TempDir; no actual network server or malicious native loading occurs in reviewed test body."
+    },
+    {
+      "path": "lattice-server/src/test/java/net/minecraft/world/level/levelgen/SurfaceRegionParityTest.java",
+      "lines": "25-33,61,215-224",
+      "details": "Explicit env-selected local world fixture reader allocates based on file length and uses unlimitedHeap. This is test harness input, not production player exposure. Mismatches are diagnostic unless lattice.parity.strict=true; do not equate default pass with parity."
+    },
+    {
+      "details": "Sink search across both test trees found no process spawning/network listener code; actual file writes in matched tests use temporary directories. Most numerical/parity files received only sink scan, not complete semantic review."
+    }
+  ],
+  "fully_reviewed_files": [
+    "lattice-native/jni/chunk_serializer.cpp",
+    "lattice-native/src/io/nbt/nbt_parser.hpp",
+    "lattice-native/src/io/nbt/nbt_parser.cpp",
+    "lattice-native/src/io/compression/zlib_codec.hpp",
+    "lattice-native/src/io/compression/zlib_codec.cpp",
+    "lattice-native/jni/native_region_file_read.cpp",
+    "lattice-native/jni/palette_ops.cpp",
+    "lattice-native/jni/heightmap.cpp",
+    "lattice-native/jni/jni_helper.hpp",
+    "lattice-native/jni/noise_handle.hpp",
+    "lattice-native/src/world/heightmap/heightmap_scan.hpp",
+    "lattice-native/src/world/heightmap/heightmap_scan.cpp",
+    "lattice-native/src/world/heightmap/heightmap_scan_avx2.cpp",
+    "lattice-native/jni/tick.cpp",
+    "lattice-native/src/world/tick/random_tick_filter.cpp",
+    "lattice-native/jni/double_perlin_noise.cpp",
+    "lattice-native/jni/octave_perlin_noise.cpp",
+    "lattice-native/jni/interpolated_noise.cpp",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeChunkSerializer.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/NativeZlibStreams.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeRegionFileRead.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeHeightmap.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/bridge/WorldgenNativeSupport.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeDoublePerlinNoise.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeOctavePerlinNoise.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeInterpolatedNoise.java",
+    "lattice-server/minecraft-patches/features/0002-Accelerate-palette-storage-and-region-file-I-O-with-.patch",
+    "lattice-server/minecraft-patches/features/0100-feat-region-use-native-positioned-payload-reads.patch",
+    "lattice-native/tests/CMakeLists.txt",
+    "lattice-native/tests/test_nbt_parser.cpp",
+    "lattice-native/tests/test_jni_bounds.cpp",
+    "lattice-native/tests/test_zlib_codec.cpp",
+    "lattice-native/tests/test_heightmap.cpp",
+    "lattice-native/tests/test_random_tick_filter.cpp",
+    "lattice-native/tests/test_palette.cpp",
+    "lattice-server/src/test/java/com/latticemc/lattice/bootstrap/LatticeNativeLoaderTestSuite.java",
+    "lattice-server/src/test/java/com/latticemc/lattice/bootstrap/LatticeBootstrapTestSuite.java",
+    "lattice-server/src/test/java/com/latticemc/lattice/config/LatticeConfigTestSuite.java",
+    "lattice-server/src/test/java/com/latticemc/lattice/nativelib/NativeRegionFileReadTestSuite.java",
+    "lattice-server/src/test/java/com/latticemc/lattice/nativelib/NativeIoCapabilityTestSuite.java",
+    "lattice-server/src/test/java/net/minecraft/world/level/levelgen/SurfaceRegionParityTest.java",
+    "lattice-server/src/test/java/net/minecraft/world/level/levelgen/SurfaceRegionParityTestSuite.java"
+  ],
+  "coverage_gaps": [
+    "No runtime/sanitizer/fuzz execution.",
+    "Generated upstream region/external payload/NBT accounter/SimpleBitStorage deserialization not fully reviewed.",
+    "Packed-storage SIMD and light/pathfinder/entity JNI not fully reviewed by this agent.",
+    "Heightmap NEON partially read; excluded from full list.",
+    "Remaining numerical/parity/benchmark test files only sink-scanned, not fully read."
+  ]
+}

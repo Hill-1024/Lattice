@@ -8,11 +8,16 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -26,9 +31,33 @@ public final class LatticeNativeLoader {
     private static final String SYS_DOWNLOAD = "lattice.native.download";
     private static final String SYS_RELEASE = "lattice.native.release";
     private static final String SYS_RELEASE_BASE = "lattice.native.releaseBaseUrl";
+    private static final String SYS_TRUSTED_SHA256 = "lattice.native.sha256";
+    private static final String SYS_ALLOW_INSECURE = "lattice.native.allowInsecureHttp";
     private static final String DEFAULT_RELEASE_BASE = "https://github.com/LatticeMC/Lattice/releases/download";
     private static final String DEFAULT_RELEASE = "native-latest";
     private static final Pattern CHECKSUM_PATTERN = Pattern.compile("^([0-9A-Fa-f]{64})  (.*?)(?:\\r?\\n)?$");
+    private static final Pattern SHA256_PATTERN = Pattern.compile("^[0-9A-Fa-f]{64}$");
+    private static final int MAX_REDIRECTS = 5;
+
+    /**
+     * Hosts a bootstrap download may be redirected to. GitHub release asset downloads redirect
+     * from {@code github.com} to a CDN on one of the other hosts; anything else is refused so a
+     * compromised origin cannot bounce the loader to an arbitrary host (SSRF).
+     */
+    private static final Set<String> ALLOWED_REDIRECT_HOSTS = Set.of(
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com",
+            "codeload.github.com");
+
+    /**
+     * SHA-256 digests embedded at build time for the official release assets, keyed by asset file
+     * name. This is the trust anchor for downloads: a release must be pinned here (or by the
+     * operator through {@code -Dlattice.native.sha256} / {@code native.sha256}) before the loader
+     * will download and {@code System.load} it. The list is intentionally empty in source builds;
+     * release-pipeline population is not implemented yet. See docs/security-audit-2026-09-13.md (finding V1).
+     */
+    private static final Map<String, String> BUILT_IN_RELEASE_DIGESTS = Map.of();
 
     private LatticeNativeLoader() {}
 
@@ -93,6 +122,8 @@ public final class LatticeNativeLoader {
     public static void load(String baseLibName) {
         final String override = System.getProperty(SYS_OVERRIDE, "").trim();
         if (!override.isEmpty()) {
+            LOGGER.warn("Loading lattice native from the trusted admin override path {}; "
+                    + "this bypasses bundled-library and checksum verification", override);
             try {
                 System.load(override);
                 LOGGER.info("Loaded lattice native from override path: {}", override);
@@ -153,12 +184,52 @@ public final class LatticeNativeLoader {
         final String asset = assetName(platform);
         final String release = normalizeRelease(System.getProperty(SYS_RELEASE, DEFAULT_RELEASE));
         final String base = System.getProperty(SYS_RELEASE_BASE, DEFAULT_RELEASE_BASE).trim();
+
+        // The remote .sha256 next to the payload is NOT a trust anchor: an attacker who controls
+        // the origin controls both. Require a digest pinned locally (built-in release manifest or
+        // an operator-provided value) before downloading and loading native code.
+        final String trustedDigest;
+        try {
+            trustedDigest = trustedDigestFor(asset);
+        } catch (IllegalArgumentException invalidDigest) {
+            throw newUnsatisfied("invalid -D" + SYS_TRUSTED_SHA256 + " value: " + invalidDigest.getMessage(), invalidDigest);
+        }
+        if (trustedDigest == null) {
+            throw newUnsatisfied("refusing to download native library '" + asset + "': no trusted SHA-256 is pinned. "
+                    + "Bundle the library in the jar, or set -D" + SYS_TRUSTED_SHA256 + "=<sha256> "
+                    + "(or native.sha256 in lattice.yml) to the digest published out-of-band.", null);
+        }
+
         final String endpoint = buildReleaseAssetUrl(base, release, asset);
         final byte[] nativeBytes = downloadBytes(endpoint);
-        final byte[] checksumBytes = downloadBytes(endpoint + ".sha256");
-        verifyChecksum(nativeBytes, new String(checksumBytes, StandardCharsets.UTF_8), asset);
+        verifyTrustedDigest(nativeBytes, trustedDigest, asset);
         LOGGER.info("Downloading Lattice native release asset '{}'", asset);
-        return extractToCache(libFile, new ByteArrayInputStream(nativeBytes));
+        return extractToCache(libFile, new ByteArrayInputStream(nativeBytes), trustedDigest);
+    }
+
+    /** Resolves the locally pinned SHA-256 for an asset, or {@code null} when none is configured. */
+    static String trustedDigestFor(String asset) {
+        final String builtIn = BUILT_IN_RELEASE_DIGESTS.get(asset);
+        if (builtIn != null && SHA256_PATTERN.matcher(builtIn).matches()) {
+            return builtIn.toLowerCase(Locale.ROOT);
+        }
+        final String configured = System.getProperty(SYS_TRUSTED_SHA256, "").trim();
+        if (configured.isEmpty()) {
+            return null;
+        }
+        if (!SHA256_PATTERN.matcher(configured).matches()) {
+            throw new IllegalArgumentException("invalid SHA-256 for -D" + SYS_TRUSTED_SHA256
+                    + ": expected 64 hexadecimal characters");
+        }
+        return configured.toLowerCase(Locale.ROOT);
+    }
+
+    static void verifyTrustedDigest(byte[] bytes, String trustedHex, String asset) throws IOException {
+        final String actual = sha256Hex(bytes);
+        if (!actual.equalsIgnoreCase(trustedHex)) {
+            throw new IOException("SHA-256 mismatch for " + asset
+                    + ": trusted " + trustedHex.toLowerCase(Locale.ROOT) + ", got " + actual);
+        }
     }
 
     static String assetName(Platform platform) {
@@ -199,31 +270,84 @@ public final class LatticeNativeLoader {
         }
     }
 
+    private static boolean allowInsecureHttp() {
+        return Boolean.parseBoolean(System.getProperty(SYS_ALLOW_INSECURE, "false"));
+    }
+
     private static byte[] downloadBytes(String endpoint) throws IOException {
-        final HttpURLConnection connection;
-        try {
-            final Object rawConnection = URI.create(endpoint).toURL().openConnection();
-            if (!(rawConnection instanceof HttpURLConnection httpConnection)) {
-                throw new IOException("native release URL is not HTTP(S): " + endpoint);
+        final boolean allowInsecure = allowInsecureHttp();
+        URI uri = requireHttpUri(endpoint, allowInsecure);
+
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            final HttpURLConnection connection = openConnection(uri);
+            connection.setInstanceFollowRedirects(false);
+            try {
+                final int responseCode = connection.getResponseCode();
+                if (responseCode >= 300 && responseCode < 400) {
+                    final String location = connection.getHeaderField("Location");
+                    if (location == null) {
+                        throw new IOException("redirect without Location header for " + uri);
+                    }
+                    final URI next = uri.resolve(location);
+                    requireAllowedRedirect(next, allowInsecure);
+                    uri = next;
+                    continue;
+                }
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    throw new IOException("HTTP " + responseCode + " for " + uri);
+                }
+                try (InputStream in = connection.getInputStream()) {
+                    return in.readAllBytes();
+                }
+            } finally {
+                connection.disconnect();
             }
-            connection = httpConnection;
+        }
+        throw new IOException("too many redirects while downloading " + endpoint);
+    }
+
+    static URI requireHttpUri(String endpoint, boolean allowInsecure) throws IOException {
+        final URI uri;
+        try {
+            uri = URI.create(endpoint);
         } catch (IllegalArgumentException invalidEndpoint) {
             throw new IOException("invalid native release URL: " + endpoint, invalidEndpoint);
         }
-        connection.setConnectTimeout(15_000);
-        connection.setReadTimeout(60_000);
-        connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "Lattice-native-loader");
-        try {
-            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                throw new IOException("HTTP " + connection.getResponseCode() + " for " + endpoint);
-            }
-            try (InputStream in = connection.getInputStream()) {
-                return in.readAllBytes();
-            }
-        } finally {
-            connection.disconnect();
+        final String scheme = uri.getScheme();
+        if (scheme == null || uri.getHost() == null) {
+            throw new IOException("invalid native release URL: " + endpoint);
         }
+        if ("https".equalsIgnoreCase(scheme)) {
+            return uri;
+        }
+        if ("http".equalsIgnoreCase(scheme) && allowInsecure) {
+            return uri;
+        }
+        throw new IOException("refusing non-HTTPS native release URL: " + endpoint
+                + " (set -D" + SYS_ALLOW_INSECURE + "=true to explicitly allow insecure transport)");
+    }
+
+    static void requireAllowedRedirect(URI next, boolean allowInsecure) throws IOException {
+        final String scheme = next.getScheme();
+        final String host = next.getHost() == null ? "" : next.getHost().toLowerCase(Locale.ROOT);
+        final boolean secureScheme = "https".equalsIgnoreCase(scheme);
+        if (!secureScheme && !(allowInsecure && "http".equalsIgnoreCase(scheme))) {
+            throw new IOException("refusing redirect to insecure URL: " + next);
+        }
+        if (!allowInsecure && !ALLOWED_REDIRECT_HOSTS.contains(host)) {
+            throw new IOException("refusing redirect to untrusted host: " + host);
+        }
+    }
+
+    private static HttpURLConnection openConnection(URI uri) throws IOException {
+        final Object rawConnection = uri.toURL().openConnection();
+        if (!(rawConnection instanceof HttpURLConnection httpConnection)) {
+            throw new IOException("native release URL is not HTTP(S): " + uri);
+        }
+        httpConnection.setConnectTimeout(15_000);
+        httpConnection.setReadTimeout(60_000);
+        httpConnection.setRequestProperty("User-Agent", "Lattice-native-loader");
+        return httpConnection;
     }
 
     private static String encodePath(String value) {
@@ -231,27 +355,55 @@ public final class LatticeNativeLoader {
     }
 
     private static Path extractToCache(String libFile, InputStream in) throws IOException {
+        return extractToCache(libFile, in, null);
+    }
+
+    static Path extractToCache(String libFile, InputStream in, String trustedDigest) throws IOException {
         final Path cacheDir = resolveCacheDir();
         Files.createDirectories(cacheDir);
-        final byte[] bytes = in.readAllBytes();
-        final String hashHex = shortHash(bytes);
-        final Path target = cacheDir.resolve(libFile + "." + hashHex);
+        hardenCacheDir(cacheDir);
 
-        if (Files.exists(target) && Files.size(target) == bytes.length) {
+        final byte[] bytes = in.readAllBytes();
+        final String digest = sha256Hex(bytes);
+        if (trustedDigest != null && !digest.equalsIgnoreCase(trustedDigest)) {
+            throw new IOException("native library digest changed in transit for " + libFile);
+        }
+
+        // Content-addressed name: reuse is only accepted when the on-disk file is a regular file
+        // (never a symlink) whose full SHA-256 matches the expected bytes.
+        final Path target = cacheDir.resolve(libFile + "." + digest.substring(0, 16));
+        if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS) && hasDigest(target, digest)) {
             return target;
         }
 
         final Path tmp = Files.createTempFile(cacheDir, libFile + ".", ".part");
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            out.write(bytes);
-        }
         try {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicFailed) {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            try (OutputStream out = Files.newOutputStream(tmp,
+                    StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                out.write(bytes);
+            }
+            try {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicFailed) {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+
+        if (!hasDigest(target, digest)) {
+            throw new IOException("native library cache entry failed post-write verification: " + target);
         }
         target.toFile().deleteOnExit();
         return target;
+    }
+
+    private static boolean hasDigest(Path target, String expectedDigest) {
+        try {
+            return sha256Hex(Files.readAllBytes(target)).equalsIgnoreCase(expectedDigest);
+        } catch (IOException unreadable) {
+            return false;
+        }
     }
 
     private static Path resolveCacheDir() {
@@ -259,19 +411,20 @@ public final class LatticeNativeLoader {
         if (!override.isEmpty()) {
             return Path.of(override);
         }
-        return Path.of(System.getProperty("java.io.tmpdir"), "lattice-native");
+        // Per-user directory rather than a shared, world-writable java.io.tmpdir path, so other
+        // local users cannot pre-place a file at the predictable cache name.
+        final String user = System.getProperty("user.name", "unknown").replaceAll("[^A-Za-z0-9._-]", "_");
+        return Path.of(System.getProperty("java.io.tmpdir"), "lattice-native-" + user);
     }
 
-    private static String shortHash(byte[] bytes) {
+    private static void hardenCacheDir(Path cacheDir) throws IOException {
+        if (Files.isSymbolicLink(cacheDir)) {
+            throw new IOException("refusing to use a symlinked native cache directory: " + cacheDir);
+        }
         try {
-            final byte[] full = MessageDigest.getInstance("SHA-256").digest(bytes);
-            final StringBuilder sb = new StringBuilder(16);
-            for (int i = 0; i < 8; ++i) {
-                sb.append(String.format("%02x", full[i] & 0xFF));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError(e);
+            Files.setPosixFilePermissions(cacheDir, PosixFilePermissions.fromString("rwx------"));
+        } catch (UnsupportedOperationException | IOException ignored) {
+            // Non-POSIX filesystems (Windows) have no equivalent; the per-user path still applies.
         }
     }
 

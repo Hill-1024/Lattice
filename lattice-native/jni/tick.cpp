@@ -59,7 +59,10 @@ Java_com_latticemc_lattice_nativelib_NativeRandomTickFilter_nativeFilterRandomTi
             lattice::jni::throw_illegal_arg(env, "lattice tick: elementBits too short");
             return 0;
         }
-        if (env->GetArrayLength(jSectionTickMasks) < sectionCount * maskLongsPerSection) {
+        const std::size_t required_mask_longs = lattice::jni::checked_count(
+                static_cast<std::size_t>(sectionCount), static_cast<std::size_t>(maskLongsPerSection));
+        if (required_mask_longs == lattice::jni::kCountOverflow
+                || static_cast<std::size_t>(env->GetArrayLength(jSectionTickMasks)) < required_mask_longs) {
             lattice::jni::throw_illegal_arg(env, "lattice tick: tick masks too short");
             return 0;
         }

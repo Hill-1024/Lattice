@@ -1,0 +1,285 @@
+{
+  "scope": "Native entity, tick and heightmap kernels; related JNI and selected actual Java callers",
+  "mode": "offline static read-only source review; no tests, PoC, builds, network or source edits",
+  "findings": [],
+  "candidates": [
+    {
+      "id": "ENTITY-C1",
+      "title": "Native pathfinder mirror retains every visited section without a size or unload bound",
+      "status": "candidate_requires_parent_review",
+      "severity": "medium if reachable through sustained same-world player-induced long mob paths",
+      "confidence": "high on unbounded retention, medium on security relevance, player-controlled workload not dynamically verified",
+      "cwe": "CWE-400",
+      "primary_location": {
+        "path": "lattice-native/src/world/entity/pathfinder.cpp",
+        "start": 1335,
+        "end": 1338,
+        "snippet": "const std::uint64_t key = mirror_section_key(x, y, z);\nif (cached_section == nullptr || key != cached_key) {\n    cached_section = &mirror.sections[key];"
+      },
+      "root_cause": "Persistent thread-local native unordered_map inserts 4096-cell section payloads without LRU, byte/section budget, TTL, or chunk-unload hook. A one-upload-per-tick budget limits allocation rate only.",
+      "attacker": "Potential ordinary player inducing repeated long mob path requests across new loaded regions in the same world; no arbitrary JNI/plugin caller assumed.",
+      "control": "Player influences mob destinations and traversed loaded terrain; cannot directly select counts or native pointers. Generated source statically confirms Zombie player targeting to MeleeAttackGoal to PathNavigation to PathFinder native hook; generated sources were not rebuilt against patches.",
+      "impact": "Accumulating native memory survives Java chunk unload and is outside Java heap accounting; sustained growth could exhaust process/native memory. Native allocation inside noexcept could terminate on allocation failure. No practical exhaustion rate established.",
+      "evidence": [
+        {
+          "path": "lattice-native/jni/pathfinder.cpp",
+          "lines": "45-53",
+          "snippet": "struct ThreadStateMirror { pf::PathfinderStateMirror mirror{}; ... };\nthread_local ThreadStateMirror g_state_mirror{};"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathFinderNativeSupport.java",
+          "lines": "188",
+          "snippet": "int worldKey = System.identityHashCode(mob.level());"
+        },
+        {
+          "path": "lattice-native/src/world/entity/pathfinder.hpp",
+          "lines": "154-166",
+          "snippet": "std::array<std::int8_t, 4096> raw_path_types{};\nstd::array<float, 4096> floor_heights{};\nstd::array<std::uint8_t, 4096> valid{};\nstd::unordered_map<std::uint64_t, PathfinderStateMirrorSection> sections{};"
+        },
+        {
+          "path": "lattice-native/jni/pathfinder.cpp",
+          "lines": "63-90",
+          "snippet": "world key switch clears sections; unchanged generation returns; lost invalidation log clears; otherwise erase only logged section keys"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathFinderNativeSupport.java",
+          "lines": "27-43,303-339",
+          "snippet": "default min volume=8192; short path Manhattan limit=24; mirror warmup uploads per tick=1; budget resets each game tick; native mirror does not"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativePathfinder.java",
+          "lines": "60-61",
+          "snippet": "enabled = !\"false\".equalsIgnoreCase(System.getProperty(\"lattice.nativePathfinder\", \"true\"));"
+        },
+        {
+          "path": "lattice-server/minecraft-patches/features/0003-Route-path-finding-through-native-support.patch",
+          "lines": "21-27",
+          "snippet": "Normal PathFinder.findPath invokes PathFinderNativeSupport.tryFindPath"
+        },
+        {
+          "path": "lattice-server/minecraft-patches/features/0024-Invalidate-pathfinder-static-cache-on-block-updates.patch",
+          "lines": "15",
+          "snippet": "PathfinderStaticCache.invalidate(this, pos) on block writes"
+        }
+      ],
+      "counterevidence": [
+        "A native request for another world on the same thread clears the complete mirror. Active mobs in multiple dimensions may reset it each tick.",
+        "More than 4096 invalidations between mirror reads cause complete clearing; mutations of retained sections evict those sections.",
+        "Short paths <=24 Manhattan, regions with horizontal maximum axis <32, volume<8192, unsupported/dynamic shapes, and unloaded snapshot cells prevent upload.",
+        "Native availability and ABI compatibility required; operator may disable nativePathfinder or set warmup budget<=0.",
+        "Java PathfinderTickStateCache caps itself at 512 sections, but that is a separate cache and does not cap native map.",
+        "Generated upstream sources are ignored by normal rg inventory; subsequently read them explicitly. Runtime ordinary-player reproduction remains unverified. PathNavigationRegion only provides cached chunks, so snapshot extending beyond that region falls back. Same-height diagonal offset13,13 passes the Manhattan24 gate with distance18.4<Zombie FOLLOW_RANGE35; at favorable chunk alignment native snapshot fits cached chunks."
+      ],
+      "remediation": "Add native per-thread/per-world section or byte budget with LRU/TTL eviction and unload invalidation. Ensure coverage/search safely falls back when eviction creates gaps. Add bounded memory-growth tests for repeated disjoint snapshots. Catch native allocation failure before noexcept boundaries. Until fixed disable nativePathfinder if observed native memory growth.",
+      "validation_not_performed": "No runtime reproduction, ASan, crash, memory-growth measurement, or exploit execution."
+    }
+  ],
+  "hardening_observations": [
+    {
+      "path": "lattice-native/jni/tick.cpp",
+      "lines": "38-44,157-163",
+      "issue": "candidateCount is checked against output but not input candidate array length",
+      "disposition": "No Java NativeRandomTickFilter class/caller found, so not established remotely reachable; add input length check."
+    },
+    {
+      "path": "lattice-native/jni/entity_visibility.cpp",
+      "lines": "373-550",
+      "issue": "Spawn filter lacks candidate/entity/player/output/section array length validation",
+      "disposition": "Production 0011 patch passes fixed single candidate and matching arrays, sectionCount/entityCount zero; malformed public JVM caller is not new privilege. Validate all buffer lengths nevertheless."
+    },
+    {
+      "path": "lattice-native/jni/brain_eligibility.cpp",
+      "lines": "173-254",
+      "issue": "Packed entry checks counts/products but omits buffer lengths and behavior entity indices",
+      "disposition": "Normal public evaluatePackedInto validates; prepared production plan 0075 uses local checked CSR pack and matching output, so no remote malformed plan demonstrated."
+    },
+    {
+      "path": "lattice-native/src/world/heightmap/heightmap_scan.cpp",
+      "lines": "82-109,214-215",
+      "issue": "Packed reads ignore SectionView.storage_longs and invalid element widths; JNI multiplication sectionCount*maskLongsPerSection may overflow",
+      "disposition": "Actual worldgen uses existing BitStorage raw arrays/bits. No corrupt stored section path defeating Java constructor checks established. Validate width and ceil(4096/(64/bits)) storage requirement; checked mask product."
+    },
+    {
+      "path": "lattice-native/jni/pathfinder.cpp",
+      "lines": "150-163,320,443-450",
+      "issue": "Native region-volume and output-size arithmetic may overflow for malformed direct JNI inputs",
+      "disposition": "NativePathfinder Java validate uses Math.multiplyExact/addExact before normal native calls; no runtime player bypass established."
+    },
+    {
+      "path": "lattice-native/jni/entity_visibility.cpp",
+      "lines": "60-76,162-178",
+      "issue": "Narrowing products to jsize may let artificial oversized counts bypass length checks",
+      "disposition": "No realistic remote count/matching-buffer bypass demonstrated; use checked_count and compare in size_t."
+    },
+    {
+      "path": "lattice-native/src/world/entity/los.cpp",
+      "lines": "11-12,100-129",
+      "issue": "Non-finite/out-of-int-range coordinates are not rejected before float-to-int conversion/DDA",
+      "disposition": "Actual mob/entity path limits distance to128, volume32768; malformed player coordinate injection not established. Reject non-finite inputs and enforce iteration bound."
+    }
+  ],
+  "dead_code": [
+    {
+      "path": "lattice-native/src/world/entity/pathfinder.cpp",
+      "start": 952,
+      "end": 1076,
+      "confidence": "confirmed",
+      "reason": "#if 0 excludes mirror_raw_type, mirror_floor_height, static_path_type_from_mirror, materialize_state_mirror from all builds",
+      "remediation": "Delete obsolete comparison block; keep history in Git."
+    },
+    {
+      "path": "lattice-native/src/world/tick/random_tick_filter.cpp",
+      "start": 46,
+      "end": 46,
+      "confidence": "confirmed",
+      "reason": "local_idx = packed & 0xFFFu at line43 makes local_idx>=4096 impossible",
+      "remediation": "Remove redundant branch or document intentional invariant."
+    },
+    {
+      "path": "lattice-native/src/world/tick/random_tick_filter.cpp",
+      "start": 20,
+      "end": 22,
+      "confidence": "confirmed",
+      "reason": "element_bits>=64 arm is unreachable after line18 returns for element_bits>32",
+      "remediation": "Remove dead ternary arm."
+    },
+    {
+      "path": "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathFinderNativeSupport.java",
+      "start": 354,
+      "end": 373,
+      "confidence": "confirmed by repository references",
+      "reason": "private CachingPathfindingContext class and constructor have no instantiation/reference outside declaration",
+      "remediation": "Remove unused class and then obsolete import if no other use."
+    },
+    {
+      "path": "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathFinderNativeSupport.java",
+      "start": 386,
+      "end": 396,
+      "confidence": "production-unused; tests reference it",
+      "reason": "isNativePathTypeSupported has no production callers; only test assertions",
+      "remediation": "Remove if old allowlist intentionally retired, updating associated tests; do not claim zero references."
+    },
+    {
+      "path": "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathfinderStateSnapshot.java",
+      "start": 16,
+      "end": 16,
+      "confidence": "confirmed",
+      "reason": "private descriptorCount field unused; descriptorCount() returns this.cache.descriptorCount()",
+      "remediation": "Remove unused field."
+    },
+    {
+      "path": "lattice-native/jni/tick.cpp",
+      "start": 23,
+      "end": 24,
+      "confidence": "orphan binding in current Java source",
+      "reason": "NativeRandomTickFilter Java class absent; rg finds only JNI and CMake mentions. Native kernel remains tested/API code, so do not remove whole module solely from this observation.",
+      "remediation": "Restore intended wrapper/integration or retire orphan JNI and build inclusion after API compatibility review."
+    }
+  ],
+  "resolved_questions": [
+    "All owned native kernel and JNI files read in full; SIMD full-width loops and scalar tails respect count boundaries when caller buffers meet contracts.",
+    "Pathfinder nodes reserve max_nodes and reject additions beyond max_nodes, preserving references used during search; neighbor array length10 covers4 cardinal+4 diagonal+2 amphibious.",
+    "No raw lifetime handle is passed for these operations; pathfinder state lives in thread-local C++ owned containers.",
+    "Brain CSR entry validates offsets, memory IDs and statuses; packed path relies on Java plan construction.",
+    "Nested policy resolver returned empty output for entity, tick, heightmap, JNI scopes.",
+    "WorldgenHeightmap storage_longs metadata is populated but unused in kernels; not sufficient by itself to claim remote corruption.",
+    "Java PathfinderTickStateCache.begin ignores gameTime and only resets on level switch; MAX_CACHED_SECTIONS512 is local Java limit."
+  ],
+  "fully_reviewed_files": [
+    "lattice-native/src/world/entity/aabb_query.cpp",
+    "lattice-native/src/world/entity/aabb_query.hpp",
+    "lattice-native/src/world/entity/aabb_query_avx2.cpp",
+    "lattice-native/src/world/entity/aabb_query_avx512.cpp",
+    "lattice-native/src/world/entity/aabb_query_neon.cpp",
+    "lattice-native/src/world/entity/approach_target_sampler.cpp",
+    "lattice-native/src/world/entity/approach_target_sampler.hpp",
+    "lattice-native/src/world/entity/biological_ai.cpp",
+    "lattice-native/src/world/entity/biological_ai.hpp",
+    "lattice-native/src/world/entity/brain_eligibility.cpp",
+    "lattice-native/src/world/entity/brain_eligibility.hpp",
+    "lattice-native/src/world/entity/brain_eligibility_neon.cpp",
+    "lattice-native/src/world/entity/collision_sweep.cpp",
+    "lattice-native/src/world/entity/collision_sweep.hpp",
+    "lattice-native/src/world/entity/collision_sweep_avx2.cpp",
+    "lattice-native/src/world/entity/collision_sweep_avx512.cpp",
+    "lattice-native/src/world/entity/collision_sweep_neon.cpp",
+    "lattice-native/src/world/entity/entity_query.cpp",
+    "lattice-native/src/world/entity/entity_query.hpp",
+    "lattice-native/src/world/entity/flee_target_sampler.cpp",
+    "lattice-native/src/world/entity/flee_target_sampler.hpp",
+    "lattice-native/src/world/entity/home_target_sampler.cpp",
+    "lattice-native/src/world/entity/home_target_sampler.hpp",
+    "lattice-native/src/world/entity/los.cpp",
+    "lattice-native/src/world/entity/los.hpp",
+    "lattice-native/src/world/entity/pathfinder.cpp",
+    "lattice-native/src/world/entity/pathfinder.hpp",
+    "lattice-native/src/world/entity/pathfinder_avx2.cpp",
+    "lattice-native/src/world/entity/pathfinder_avx512.cpp",
+    "lattice-native/src/world/entity/pathfinder_neon.cpp",
+    "lattice-native/src/world/entity/spawn_filter.cpp",
+    "lattice-native/src/world/entity/spawn_filter.hpp",
+    "lattice-native/src/world/entity/visibility_scan.cpp",
+    "lattice-native/src/world/entity/visibility_scan.hpp",
+    "lattice-native/src/world/entity/visibility_scan_avx2.cpp",
+    "lattice-native/src/world/entity/visibility_scan_avx512.cpp",
+    "lattice-native/src/world/entity/visibility_scan_neon.cpp",
+    "lattice-native/src/world/entity/water_target_sampler.cpp",
+    "lattice-native/src/world/entity/water_target_sampler.hpp",
+    "lattice-native/src/world/tick/random_tick_filter.cpp",
+    "lattice-native/src/world/tick/random_tick_filter.hpp",
+    "lattice-native/src/world/heightmap/heightmap_scan.cpp",
+    "lattice-native/src/world/heightmap/heightmap_scan.hpp",
+    "lattice-native/src/world/heightmap/heightmap_scan_avx2.cpp",
+    "lattice-native/src/world/heightmap/heightmap_scan_neon.cpp",
+    "lattice-native/jni/biological_ai.cpp",
+    "lattice-native/jni/brain_eligibility.cpp",
+    "lattice-native/jni/entity_query.cpp",
+    "lattice-native/jni/entity_visibility.cpp",
+    "lattice-native/jni/heightmap.cpp",
+    "lattice-native/jni/los.cpp",
+    "lattice-native/jni/pathfinder.cpp",
+    "lattice-native/jni/tick.cpp",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeHeightmap.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeEntityQuery.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeSpawnFilter.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeLineOfSight.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathFinderNativeSupport.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathfinderStateSnapshot.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathfinderTickStateCache.java",
+    "lattice-server/minecraft-patches/features/0003-Route-path-finding-through-native-support.patch",
+    "lattice-server/minecraft-patches/features/0011-Accelerate-light-propagation-and-spawn-checks-with-n.patch",
+    "lattice-server/minecraft-patches/features/0024-Invalidate-pathfinder-static-cache-on-block-updates.patch",
+    "lattice-server/minecraft-patches/features/0075-perf-gate-native-brain-eligibility-by-memory-version.patch"
+  ],
+  "generated_source_followup": {
+    "consistency": "Read existing ignored generated Java sources. No rebuild or patch application performed.",
+    "chain": [
+      "Zombie.java:179 installs ZombieAttackGoal;183 targets Player.class;203 sets FOLLOW_RANGE35",
+      "NearestAttackableTargetGoal.java:69 getNearestPlayer;75 setTarget",
+      "ZombieAttackGoal.java extends MeleeAttackGoal",
+      "MeleeAttackGoal.java:45 createPath(target,0);95-114 moving target causes repeated navigation.moveTo",
+      "PathNavigation.java:139-140 uses target entity.blockPosition;153 uses getMaxPathLength;186-189 region followRange+16 and PathFinder.findPath",
+      "PathFinder.java:45-49 routes normal request into PathFinderNativeSupport"
+    ],
+    "default_gate_feasibility": "Same-height target offset dx13,dz13 gives Manhattan26>24 and Euclidean18.4<35. Zombie at aligned chunk origin creates navigation cache covering chunks [-64,63] for radius51, while snapshot with native margin37 is approximately [-38,52/53]. Thus cached-chunk guard need not prevent default native upload. Requires loaded static-shape terrain and no canceled plugin event.",
+    "additional_fully_reviewed_files": [
+      "lattice-server/src/minecraft/java/net/minecraft/world/entity/ai/goal/MeleeAttackGoal.java",
+      "lattice-server/src/minecraft/java/net/minecraft/world/entity/ai/goal/TemptGoal.java",
+      "lattice-server/src/minecraft/java/net/minecraft/world/entity/ai/goal/ZombieAttackGoal.java",
+      "lattice-server/src/minecraft/java/net/minecraft/world/entity/ai/goal/target/NearestAttackableTargetGoal.java",
+      "lattice-server/src/minecraft/java/net/minecraft/world/level/PathNavigationRegion.java"
+    ],
+    "partial_files": [
+      "lattice-server/src/minecraft/java/net/minecraft/world/entity/ai/navigation/PathNavigation.java:50-235",
+      "lattice-server/src/minecraft/java/net/minecraft/world/entity/monster/zombie/Zombie.java:170-212",
+      "lattice-server/src/minecraft/java/net/minecraft/world/level/pathfinder/PathFinder.java:45-72"
+    ]
+  },
+  "remaining_gaps": [
+    "NativePathfinder.java, NativeBrainEligibility.java only relevant sections read, not full files.",
+    "WorldgenNativeSupport.java read through heightmap flow only, not entire file.",
+    "Native AABB, collision, visibility and sampler Java wrappers/callers not read fully; cannot establish remote overflow reachability.",
+    "Actual upstream network coordinate gates not read. Player-driven target generation subsequently read from ignored generated source; no rebuild to verify patch consistency.",
+    "Runtime behavior, current build integration, memory growth and dynamic safety not tested by instruction."
+  ]
+}

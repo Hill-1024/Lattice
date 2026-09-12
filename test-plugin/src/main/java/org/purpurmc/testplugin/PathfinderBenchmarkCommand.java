@@ -40,6 +40,7 @@ final class PathfinderBenchmarkCommand extends Command {
             Collections.emptyList()
         );
         this.plugin = plugin;
+        this.setPermission("lattice.bench.pathfinder");
     }
 
     @Override
@@ -48,6 +49,9 @@ final class PathfinderBenchmarkCommand extends Command {
         final String commandLabel,
         final String[] args
     ) {
+        if (!this.testPermission(sender)) {
+            return true;
+        }
         if (args.length == 0) {
             sender.sendMessage(this.getUsage());
             return false;

@@ -48,6 +48,8 @@ class LatticeConfigTestSuite {
         assertEquals("512", System.getProperty("lattice.nativeEntityVisibilityBatchMinEntities"));
         assertEquals("1048576", System.getProperty("lattice.nativeEntityVisibilityBatchMaxScratchBytes"));
         assertEquals("true", System.getProperty("lattice.nativeLosSectionLookupReuse"));
+        assertEquals("", System.getProperty("lattice.native.sha256"));
+        assertEquals("false", System.getProperty("lattice.native.allowInsecureHttp"));
     }
 
     @Test

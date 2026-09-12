@@ -38,11 +38,11 @@ jobs:
           - { name: freebsd-aarch64, runner: ubuntu-24.04, os: freebsd, arch: aarch64, artifact_path: lattice-native/build/liblattice.so, asset_name: lattice-native-freebsd-aarch64.so }
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up JDK 21
         if: matrix.os != 'freebsd'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: '21'
@@ -50,13 +50,13 @@ jobs:
 
       - name: Set up CMake
         if: matrix.os != 'freebsd'
-        uses: lukka/get-cmake@latest
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
         with:
           cmakeVersion: '3.28.3'
 
       - name: Cache LLVM-MinGW
         if: matrix.os == 'windows'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.tool_cache }}/llvm-mingw/20260616/${{ matrix.llvm_mingw_host }}
           key: llvm-mingw-20260616-ucrt-${{ matrix.llvm_mingw_host }}
@@ -247,7 +247,7 @@ jobs:
           "$hash  $($env:ASSET_NAME)" | Set-Content -LiteralPath "$assetPath.sha256" -NoNewline
 
       - name: Upload canonical release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-publish-${{ matrix.name }}
           path: ${{ runner.temp }}/lattice-native-release
@@ -262,7 +262,7 @@ jobs:
       contents: write
     steps:
       - name: Download canonical release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: native-publish-*
           path: release-assets
@@ -293,7 +293,7 @@ jobs:
           done < <(find release-assets -maxdepth 1 -type f)
 
       - name: Publish immutable native release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: native-${{ github.sha }}
           target_commitish: ${{ github.sha }}
@@ -306,7 +306,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Publish native-latest release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: native-latest
           name: Lattice Native (latest)

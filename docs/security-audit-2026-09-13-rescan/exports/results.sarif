@@ -1,0 +1,369 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "72c01cd0-86be-4569-8841-af17fd12e43a"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "warning",
+              "message": {
+                "text": "\u672c\u6b21\u6807\u51c6\u9759\u6001\u5ba1\u8ba1\u8986\u76d6\u5173\u952e\u6267\u884c\u8fb9\u754c\u3001\u6d3b\u52a8\u8865\u4e01\u53ca\u654f\u611f\u64cd\u4f5c\u641c\u7d22\uff1b\u4ee5\u4e0b\u6587\u4ef6\u4ec5\u90e8\u5206\u9605\u8bfb\u6216\u4ec5\u5b8c\u6210\u5f15\u7528/\u654f\u611f\u64cd\u4f5c\u641c\u7d22\uff0c\u672a\u5ba3\u79f0\u5168\u6587\u5ba1\u8ba1\u3002"
+              }
+            },
+            {
+              "level": "warning",
+              "message": {
+                "text": "Confirming native library exposure separately from absent Java production route"
+              }
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "codexSecurityCoverageCompleteness": "partial",
+        "codexSecuritySchemaVersion": "1.0",
+        "codexSecurityTargetKind": "git_worktree"
+      },
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "root_control"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-native/src/world/entity/pathfinder.cpp"
+                },
+                "region": {
+                  "endLine": 1338,
+                  "startLine": 1335
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "propagation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-native/jni/pathfinder.cpp"
+                },
+                "region": {
+                  "endLine": 89,
+                  "startLine": 45
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bridge/PathFinderNativeSupport.java"
+                },
+                "region": {
+                  "endLine": 338,
+                  "startLine": 304
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:player-target"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/minecraft/java/net/minecraft/world/entity/ai/goal/MeleeAttackGoal.java"
+                },
+                "region": {
+                  "endLine": 46,
+                  "startLine": 39
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:path-entry"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/minecraft/java/net/minecraft/world/level/pathfinder/PathFinder.java"
+                },
+                "region": {
+                  "endLine": 51,
+                  "startLine": 45
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:upload"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-native/jni/pathfinder.cpp"
+                },
+                "region": {
+                  "endLine": 419,
+                  "startLine": 417
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:retained-state"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-native/jni/pathfinder.cpp"
+                },
+                "region": {
+                  "endLine": 53,
+                  "startLine": 45
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:unbounded-insert"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-native/src/world/entity/pathfinder.cpp"
+                },
+                "region": {
+                  "endLine": 1345,
+                  "startLine": 1333
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:section-cost"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-native/src/world/entity/pathfinder.hpp"
+                },
+                "region": {
+                  "endLine": 165,
+                  "startLine": 153
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:clear-controls"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-native/jni/pathfinder.cpp"
+                },
+                "region": {
+                  "endLine": 89,
+                  "startLine": 75
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "\u6301\u7eed\u5728\u65b0\u533a\u57df\u89e6\u53d1\u751f\u7269\u5bfb\u8def\u53ef\u7d2f\u79ef\u65e0\u4e0a\u9650\u539f\u751f\u5185\u5b58\n\n\u539f\u751f\u5bfb\u8def\u5c06\u6bcf\u4e2a\u8bbf\u95ee\u8fc7\u7684 section \u4fdd\u5b58\u5728\u957f\u671f\u5b58\u6d3b\u7684\u7ebf\u7a0b\u955c\u50cf\u4e2d\uff0c\u6ca1\u6709\u5bb9\u91cf\u6216\u533a\u5757\u5378\u8f7d\u6dd8\u6c70\u3002\u666e\u901a\u73a9\u5bb6\u53ef\u901a\u8fc7\u751f\u7269\u8ffd\u9010\u89e6\u53d1\u65b0\u533a\u57df\u5feb\u7167\uff1b\u5728\u540c\u4e00\u4e16\u754c\u4e14\u7f3a\u5c11\u8db3\u591f\u5931\u6548/\u5207\u6362\u6e05\u7406\u7684\u5de5\u4f5c\u8d1f\u8f7d\u4e0b\uff0c\u5185\u5b58\u6301\u7eed\u589e\u957f\uff0c\u6700\u7ec8\u5f71\u54cd\u6574\u4e2a\u670d\u52a1\u53ef\u7528\u6027\u3002\n\nSeverity: medium\n\nCategory: Resource exhaustion\n\nWeaknesses: CWE-400, CWE-770\n\nRemediation:\n\u7ed9\u6bcf\u7ebf\u7a0b/\u6bcf\u4e16\u754c\u955c\u50cf\u8bbe\u7f6e\u660e\u786e section \u6216\u5b57\u8282\u9884\u7b97\uff0c\u6309 LRU/TTL \u6dd8\u6c70\u5e76\u63a5\u5165 chunk unload/world close \u6e05\u7406\uff1b\u8fbe\u5230\u9884\u7b97\u65f6\u62d2\u7edd\u65b0\u589e\u5e76\u8d70 Java \u56de\u9000\u3002\u6dd8\u6c70\u65f6\u4fdd\u8bc1 LazyPathGrid \u4fdd\u5b58\u7684 section \u6307\u9488\u5728\u4e00\u6b21\u67e5\u627e\u5185\u6709\u6548\u3002\u4fdd\u7559\u4e0a\u4f20\u901f\u7387\u95e8\u69db\u4f5c\u4e3a\u8865\u5145\uff0c\u589e\u52a0 native mirror section/bytes \u76d1\u63a7\u3002\n\nRemediation tests:\n- \u4f9d\u6b21\u4e0a\u4f20\u8d85\u8fc7\u9884\u7b97\u7684\u4e92\u4e0d\u91cd\u53e0 section\uff0c\u65ad\u8a00 map \u5927\u5c0f\u548c\u5b57\u8282\u9884\u7b97\u6709\u754c\u3002\n- \u9a8c\u8bc1 chunk unload/world close\u3001\u65b9\u5757\u5931\u6548\u4e0e\u8de8\u4e16\u754c\u5207\u6362\u4f1a\u91ca\u653e\u5bf9\u5e94\u955c\u50cf\u3002\n- \u5728\u540c\u4e16\u754c\u91cd\u590d\u65b0\u533a\u57df\u5bfb\u8def\u540e\u786e\u8ba4 RSS/\u955c\u50cf\u6570\u91cf\u8d8b\u7a33\uff0c\u8986\u76d6\u5e76\u53d1\u67e5\u627e\u4e0e\u6dd8\u6c70\u7684\u6307\u9488\u5b89\u5168\u3002\n\nPreventive controls:\n- \u6240\u6709\u957f\u671f native \u7f13\u5b58\u540c\u65f6\u5b9a\u4e49\u5bb9\u91cf\u3001\u5931\u6548\u548c\u6240\u5c5e\u4e16\u754c\u751f\u547d\u5468\u671f\u3002"
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:d8bb912fa0c3c8d5325e222feefde8d5f4c1f562e9573d3a30cf22335144cdd2"
+          },
+          "properties": {
+            "category": "resource-exhaustion",
+            "confidence": "medium",
+            "findingId": "csf_36bc4f76f7a57ff38ff4f62a",
+            "occurrenceId": "occ_9463d8052c319cb7a0edb13a",
+            "severity": "medium"
+          },
+          "ruleId": "unbounded-cache.native-pathfinder-mirror",
+          "ruleIndex": 1
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "root_control"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java"
+                },
+                "region": {
+                  "endLine": 428,
+                  "startLine": 424
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java"
+                },
+                "region": {
+                  "endLine": 158,
+                  "startLine": 157
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java"
+                },
+                "region": {
+                  "endLine": 417,
+                  "startLine": 409
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "propagation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java"
+                },
+                "region": {
+                  "endLine": 400,
+                  "startLine": 361
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:cache-path"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java"
+                },
+                "region": {
+                  "endLine": 417,
+                  "startLine": 416
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:accept-existing"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java"
+                },
+                "region": {
+                  "endLine": 364,
+                  "startLine": 362
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "evidence:digest-before-return"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lattice-server/src/main/java/com/latticemc/lattice/bootstrap/LatticeNativeLoader.java"
+                },
+                "region": {
+                  "endLine": 377,
+                  "startLine": 374
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "\u5171\u4eab\u4e34\u65f6\u76ee\u5f55\u88ab\u9884\u5360\u65f6\uff0c\u539f\u751f\u5e93\u52a0\u8f7d\u53ef\u8de8\u8d26\u6237\u6267\u884c\u4ee3\u7801\n\n\u7f13\u5b58\u76ee\u5f55\u540d\u79f0\u53ef\u9884\u6d4b\uff0c\u4e14\u52a0\u8f7d\u5668\u5ffd\u7565 POSIX \u6743\u9650\u8bbe\u7f6e\u5931\u8d25\u3002\u53e6\u4e00\u540c\u673a\u7528\u6237\u53ef\u9884\u5efa\u53ef\u5199\u76ee\u5f55\uff0c\u5728 SHA-256 \u68c0\u67e5\u548c System.load \u4e4b\u95f4\u66ff\u6362\u5e93\uff0c\u4f7f\u4ee3\u7801\u4ee5\u670d\u52a1\u8d26\u6237\u6743\u9650\u8fd0\u884c\u3002\n\nSeverity: medium\n\nCategory: Insecure temporary file\n\nWeaknesses: CWE-377, CWE-367\n\nRemediation:\n\u5728\u7ecf\u9a8c\u8bc1\u7684\u79c1\u6709\u6839\u76ee\u5f55\u4e2d\uff0c\u4ee5\u539f\u5b50\u7684 owner-only \u6743\u9650\u521b\u5efa\u4e0d\u53ef\u9884\u6d4b\u7684\u63d0\u53d6\u76ee\u5f55\uff1b\u5982\u9700\u6301\u4e45\u7f13\u5b58\uff0c\u62d2\u7edd\u975e\u5f53\u524d\u670d\u52a1\u8d26\u6237\u6240\u6709\u6216\u53ef\u88ab\u5176\u4ed6\u8d26\u6237\u6539\u5199\u7684\u76ee\u5f55\u4e0e\u7236\u8def\u5f84\uff0cPOSIX \u6743\u9650\u8bbe\u7f6e\u5931\u8d25\u5fc5\u987b\u7ec8\u6b62\u52a0\u8f7d\u3002\u4fdd\u62a4\u987b\u6301\u7eed\u5230 System.load \u5b8c\u6210\uff0c\u91cd\u590d\u6821\u9a8c\u6458\u8981\u4e0d\u80fd\u66ff\u4ee3\u76ee\u5f55\u6240\u6709\u6743\u4fdd\u62a4\u3002\n\nRemediation tests:\n- \u7528\u4e0d\u540c UID \u9884\u5efa 0777 \u7684\u9ed8\u8ba4\u7f13\u5b58\u76ee\u5f55\uff0c\u65ad\u8a00\u52a0\u8f7d\u62d2\u7edd\u4e14\u4e0d\u4f1a\u8c03\u7528 System.load\u3002\n- \u65ad\u8a00 POSIX chmod \u5931\u8d25\u4e0d\u4f1a\u88ab\u5f53\u4f5c\u4e0d\u652f\u6301 POSIX \u800c\u5ffd\u7565\u3002\n- \u68c0\u67e5\u6b63\u5e38\u79c1\u6709\u76ee\u5f55\u7684\u5185\u7f6e\u5e93\u3001\u4e0b\u8f7d\u5e93\u3001\u7f13\u5b58\u590d\u7528\u3001\u5e76\u53d1\u542f\u52a8\u8def\u5f84\u3002\n\nPreventive controls:\n- \u7edf\u4e00\u5c01\u88c5\u539f\u751f\u53ef\u6267\u884c\u5185\u5bb9\u7684\u5b89\u5168\u63d0\u53d6\u76ee\u5f55\u751f\u547d\u5468\u671f\u3002"
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:2e52201c89ee873f9b5962cf94081a7001ea281bba097bc90077fd64bd789748"
+          },
+          "properties": {
+            "category": "insecure-temporary-file",
+            "confidence": "high",
+            "findingId": "csf_8f78983af1cd0751b303524d",
+            "occurrenceId": "occ_b20c2c634800054f52b7f7a2",
+            "severity": "medium"
+          },
+          "ruleId": "insecure-temporary-directory.native-library-load",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Codex Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Insecure temporary directory: Native library load. Categories: Insecure temporary file. Weaknesses: CWE-367, CWE-377."
+              },
+              "help": {
+                "markdown": "Insecure temporary directory: Native library load. Categories: Insecure temporary file. Weaknesses: CWE-367, CWE-377.\n\n## Remediation\n\n\u5728\u7ecf\u9a8c\u8bc1\u7684\u79c1\u6709\u6839\u76ee\u5f55\u4e2d\uff0c\u4ee5\u539f\u5b50\u7684 owner-only \u6743\u9650\u521b\u5efa\u4e0d\u53ef\u9884\u6d4b\u7684\u63d0\u53d6\u76ee\u5f55\uff1b\u5982\u9700\u6301\u4e45\u7f13\u5b58\uff0c\u62d2\u7edd\u975e\u5f53\u524d\u670d\u52a1\u8d26\u6237\u6240\u6709\u6216\u53ef\u88ab\u5176\u4ed6\u8d26\u6237\u6539\u5199\u7684\u76ee\u5f55\u4e0e\u7236\u8def\u5f84\uff0cPOSIX \u6743\u9650\u8bbe\u7f6e\u5931\u8d25\u5fc5\u987b\u7ec8\u6b62\u52a0\u8f7d\u3002\u4fdd\u62a4\u987b\u6301\u7eed\u5230 System.load \u5b8c\u6210\uff0c\u91cd\u590d\u6821\u9a8c\u6458\u8981\u4e0d\u80fd\u66ff\u4ee3\u76ee\u5f55\u6240\u6709\u6743\u4fdd\u62a4\u3002",
+                "text": "Insecure temporary directory: Native library load. Categories: Insecure temporary file. Weaknesses: CWE-367, CWE-377.\n\nRemediation:\n\n\u5728\u7ecf\u9a8c\u8bc1\u7684\u79c1\u6709\u6839\u76ee\u5f55\u4e2d\uff0c\u4ee5\u539f\u5b50\u7684 owner-only \u6743\u9650\u521b\u5efa\u4e0d\u53ef\u9884\u6d4b\u7684\u63d0\u53d6\u76ee\u5f55\uff1b\u5982\u9700\u6301\u4e45\u7f13\u5b58\uff0c\u62d2\u7edd\u975e\u5f53\u524d\u670d\u52a1\u8d26\u6237\u6240\u6709\u6216\u53ef\u88ab\u5176\u4ed6\u8d26\u6237\u6539\u5199\u7684\u76ee\u5f55\u4e0e\u7236\u8def\u5f84\uff0cPOSIX \u6743\u9650\u8bbe\u7f6e\u5931\u8d25\u5fc5\u987b\u7ec8\u6b62\u52a0\u8f7d\u3002\u4fdd\u62a4\u987b\u6301\u7eed\u5230 System.load \u5b8c\u6210\uff0c\u91cd\u590d\u6821\u9a8c\u6458\u8981\u4e0d\u80fd\u66ff\u4ee3\u76ee\u5f55\u6240\u6709\u6743\u4fdd\u62a4\u3002"
+              },
+              "id": "insecure-temporary-directory.native-library-load",
+              "name": "Insecure temporary directory: Native library load",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-367",
+                  "external/cwe/cwe-377",
+                  "insecure-temporary-file",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Insecure temporary directory: Native library load"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Unbounded cache: Native pathfinder mirror. Categories: Resource exhaustion. Weaknesses: CWE-400, CWE-770."
+              },
+              "help": {
+                "markdown": "Unbounded cache: Native pathfinder mirror. Categories: Resource exhaustion. Weaknesses: CWE-400, CWE-770.\n\n## Remediation\n\n\u7ed9\u6bcf\u7ebf\u7a0b/\u6bcf\u4e16\u754c\u955c\u50cf\u8bbe\u7f6e\u660e\u786e section \u6216\u5b57\u8282\u9884\u7b97\uff0c\u6309 LRU/TTL \u6dd8\u6c70\u5e76\u63a5\u5165 chunk unload/world close \u6e05\u7406\uff1b\u8fbe\u5230\u9884\u7b97\u65f6\u62d2\u7edd\u65b0\u589e\u5e76\u8d70 Java \u56de\u9000\u3002\u6dd8\u6c70\u65f6\u4fdd\u8bc1 LazyPathGrid \u4fdd\u5b58\u7684 section \u6307\u9488\u5728\u4e00\u6b21\u67e5\u627e\u5185\u6709\u6548\u3002\u4fdd\u7559\u4e0a\u4f20\u901f\u7387\u95e8\u69db\u4f5c\u4e3a\u8865\u5145\uff0c\u589e\u52a0 native mirror section/bytes \u76d1\u63a7\u3002",
+                "text": "Unbounded cache: Native pathfinder mirror. Categories: Resource exhaustion. Weaknesses: CWE-400, CWE-770.\n\nRemediation:\n\n\u7ed9\u6bcf\u7ebf\u7a0b/\u6bcf\u4e16\u754c\u955c\u50cf\u8bbe\u7f6e\u660e\u786e section \u6216\u5b57\u8282\u9884\u7b97\uff0c\u6309 LRU/TTL \u6dd8\u6c70\u5e76\u63a5\u5165 chunk unload/world close \u6e05\u7406\uff1b\u8fbe\u5230\u9884\u7b97\u65f6\u62d2\u7edd\u65b0\u589e\u5e76\u8d70 Java \u56de\u9000\u3002\u6dd8\u6c70\u65f6\u4fdd\u8bc1 LazyPathGrid \u4fdd\u5b58\u7684 section \u6307\u9488\u5728\u4e00\u6b21\u67e5\u627e\u5185\u6709\u6548\u3002\u4fdd\u7559\u4e0a\u4f20\u901f\u7387\u95e8\u69db\u4f5c\u4e3a\u8865\u5145\uff0c\u589e\u52a0 native mirror section/bytes \u76d1\u63a7\u3002"
+              },
+              "id": "unbounded-cache.native-pathfinder-mirror",
+              "name": "Unbounded cache: Native pathfinder mirror",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-400",
+                  "external/cwe/cwe-770",
+                  "resource-exhaustion",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Unbounded cache: Native pathfinder mirror"
+              }
+            }
+          ],
+          "version": "0.1.24"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

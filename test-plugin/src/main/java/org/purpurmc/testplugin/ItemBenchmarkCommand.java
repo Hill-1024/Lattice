@@ -45,10 +45,14 @@ final class ItemBenchmarkCommand extends Command {
         super("itembench", "Runs a controlled large ItemEntity workload",
             "/itembench <start|measure|status|stop> ...", Collections.emptyList());
         this.plugin = plugin;
+        this.setPermission("lattice.bench.item");
     }
 
     @Override
     public boolean execute(final CommandSender sender, final String label, final String[] args) {
+        if (!this.testPermission(sender)) {
+            return true;
+        }
         if (args.length == 0) {
             sender.sendMessage(this.getUsage());
             return false;

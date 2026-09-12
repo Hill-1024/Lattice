@@ -61,7 +61,18 @@ paper-server
 *.jar
 test-plugin.settings.gradle.kts
 /docs/*
+!/docs/security-audit-*.md
 *.bin
+
+# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
 
 
 # Native libraries

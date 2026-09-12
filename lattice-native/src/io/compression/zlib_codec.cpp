@@ -79,14 +79,17 @@ Status zlib_decompress(const std::uint8_t* src, std::size_t src_len,
 }
 
 Status zlib_validate(const std::uint8_t* src, std::size_t src_len,
-                     std::size_t* out_uncompressed_size) noexcept {
+                     std::size_t* out_uncompressed_size,
+                     std::size_t max_output_bytes) noexcept {
     if (out_uncompressed_size) *out_uncompressed_size = 0;
     if (!src) return Status::kBadArg;
     if (src_len == 0) return Status::kBadData;
+    if (max_output_bytes == 0) return Status::kBadArg;
 
     constexpr std::size_t kMinInitial = 64 * 1024;
     std::size_t cap = std::max(kMinInitial, src_len * 8u);
     if (cap < src_len) cap = kMinInitial; // overflow fallback
+    if (cap > max_output_bytes) cap = max_output_bytes;
 
     for (;;) {
         std::uint8_t* scratch = static_cast<std::uint8_t*>(::operator new(cap, std::nothrow));
@@ -102,8 +105,12 @@ Status zlib_validate(const std::uint8_t* src, std::size_t src_len,
         }
         if (st != Status::kShortBuffer) return st;
 
+        // A valid stream needs more room than the ceiling allows: reject rather
+        // than keep doubling.
+        if (cap >= max_output_bytes) return Status::kBadData;
         if (cap > (static_cast<std::size_t>(-1) / 2u)) return Status::kOom;
         cap *= 2u;
+        if (cap > max_output_bytes) cap = max_output_bytes;
     }
 }
 

@@ -51,14 +51,18 @@ bool populate_half(JNIEnv* env,
         return false;
     }
     const std::size_t N = static_cast<std::size_t>(amp_len);
-    if (env->GetArrayLength(jOrigins) != static_cast<jsize>(N * 3)) {
+    const std::size_t origins_len = lattice::jni::checked_count(N, 3);
+    const std::size_t perms_len = lattice::jni::checked_count(N, 256);
+    if (origins_len == lattice::jni::kCountOverflow
+            || !lattice::jni::array_has_length(env, jOrigins, origins_len)) {
         char buf[128];
         std::snprintf(buf, sizeof buf,
                       "lattice double-perlin %s: origins must be 3*N doubles", tag);
         lattice::jni::throw_illegal_arg(env, buf);
         return false;
     }
-    if (env->GetArrayLength(jPerms) != static_cast<jsize>(N * 256)) {
+    if (perms_len == lattice::jni::kCountOverflow
+            || !lattice::jni::array_has_length(env, jPerms, perms_len)) {
         char buf[128];
         std::snprintf(buf, sizeof buf,
                       "lattice double-perlin %s: permutations must be 256*N bytes", tag);

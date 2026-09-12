@@ -57,6 +57,33 @@ inline void throw_oom(JNIEnv* env, const char* message) noexcept {
     throw_java(env, "java/lang/OutOfMemoryError", message);
 }
 
+// ---- Overflow-safe length validation --------------------------------------
+//
+// Array-length checks must never compute `count * per_item` in a narrow type:
+// a Java `jsize` is 32-bit, so `N * 256` overflows for large N and a truncated
+// comparison lets an undersized array through, after which the native loop
+// reads out of bounds. `checked_count` is a pure function (no JNI) so the
+// overflow behaviour is unit-testable directly.
+
+inline constexpr std::size_t kCountOverflow = static_cast<std::size_t>(-1);
+
+/// Expected element count for `count` items of `per_item` elements each, or
+/// `kCountOverflow` when the multiplication would wrap.
+inline constexpr std::size_t checked_count(std::size_t count, std::size_t per_item) noexcept {
+    if (per_item != 0 && count > (static_cast<std::size_t>(-1) / per_item)) {
+        return kCountOverflow;
+    }
+    return count * per_item;
+}
+
+/// True when `arr` is non-null and its length equals `expected` exactly.
+template <typename TJArray>
+inline bool array_has_length(JNIEnv* env, TJArray arr, std::size_t expected) noexcept {
+    if (!env || !arr) return false;
+    const jsize actual = env->GetArrayLength(arr);
+    return actual >= 0 && static_cast<std::size_t>(actual) == expected;
+}
+
 // ---- Primitive array critical guards --------------------------------------
 //
 // Usage:

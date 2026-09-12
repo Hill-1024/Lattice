@@ -188,3 +188,22 @@ TEST_CASE("zlib_codec: validate rejects null source") {
     auto st = zlib_validate(nullptr, 1, nullptr);
     check_status(st, Status::kBadArg);
 }
+
+TEST_CASE("zlib_codec: validate enforces the output ceiling") {
+    const std::string src = kHelloWorld;
+    std::vector<std::uint8_t> compressed = compress_string(src);
+    REQUIRE(src.size() > 1);
+
+    // A ceiling below the true uncompressed size must be refused rather than
+    // growing the scratch buffer without bound (decompression-bomb guard, V6).
+    auto st = zlib_validate(compressed.data(), compressed.size(), nullptr, src.size() - 1);
+    check_status(st, Status::kBadData);
+}
+
+TEST_CASE("zlib_codec: validate rejects a zero output ceiling") {
+    const std::string src = kHelloWorld;
+    std::vector<std::uint8_t> compressed = compress_string(src);
+
+    auto st = zlib_validate(compressed.data(), compressed.size(), nullptr, 0);
+    check_status(st, Status::kBadArg);
+}

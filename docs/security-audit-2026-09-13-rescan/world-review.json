@@ -1,0 +1,292 @@
+{
+  "scope": "world generation, lighting, palette native kernels and selected Java/JNI boundary paths",
+  "policy_resolution": {
+    "scope": "lattice-native/src/world",
+    "resolved_policy": "empty",
+    "method": "resolve_security_md.py --repo /Users/hill/Documents/Code/Lattice --scope lattice-native/src/world --out -"
+  },
+  "method": "Read-only offline static source review; no application/native code executed, no network, no source modifications. Partial coverage explicitly enumerated.",
+  "findings": [],
+  "hardening_candidates": [
+    {
+      "id": "WORLD-H1",
+      "title": "Density grid dimension multiplication can overflow before bounds check",
+      "evidence": [
+        {
+          "path": "lattice-native/jni/density_function.cpp",
+          "lines": "1242-1255"
+        },
+        {
+          "path": "lattice-native/jni/chunk_noise_sampler.cpp",
+          "lines": "439-446,474-481"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeDensityFunction.java",
+          "lines": "306-321"
+        }
+      ],
+      "rootcause": "Three positive jint dimensions are multiplied in signed 64-bit arithmetic. The product can overflow; Java performs the same multiplication. Native evaluate_grid writes nested dimension loops to the caller output buffer.",
+      "attacker": "Only arbitrary in-process Java caller demonstrated; normal chunk generation owns the dimensions. NativeChunkNoiseSampler has no Java counterpart. No remote/player-controlled dimension path established.",
+      "impact": "Out-of-bounds output writes and JVM crash possible with crafted direct API calls; not classified as a security finding across a trust boundary.",
+      "CWE": "CWE-190 / CWE-787",
+      "severity": "not rated; hardening",
+      "confidence": "high on arithmetic defect; low on attacker reachability",
+      "counterevidence": "Known production grid callers construct small fixed chunk/climate grids; plugins already have full process authority.",
+      "remediation": "Use checked_count or division-based bounds against output length before multiplication; Java Math.multiplyExact with fallback. Apply to grid roots and each JNI dimension product."
+    },
+    {
+      "id": "WORLD-H2",
+      "title": "Material batch length check multiplies count in jint",
+      "evidence": [
+        {
+          "path": "lattice-native/jni/material_rules.cpp",
+          "lines": "374-378,418-424"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeMaterialRules.java",
+          "lines": "60-69"
+        },
+        {
+          "path": "lattice-server/minecraft-patches/features/0016-Accelerate-SurfaceSystem-block-placement-with-native.patch",
+          "lines": "124-128"
+        }
+      ],
+      "rootcause": "count * 5 can overflow in both Java check and C++ signed arithmetic; later blockData indexing uses i * 5.",
+      "attacker": "Direct in-process caller would need enormous count and output array. Surface generation supplies chunk-height arrays and bounded per-column samples.",
+      "impact": "Potential out-of-bounds read with malformed API calls; no demonstrated remote exploit.",
+      "CWE": "CWE-190 / CWE-125",
+      "severity": "not rated; hardening",
+      "confidence": "high on source issue; low on trust-boundary exploit",
+      "counterevidence": "Production buffers are allocated from chunk.getHeight and filled through Java array indexing; malformed oversized dimensions do not come from a player packet in reviewed paths.",
+      "remediation": "Validate count <= blockData.length / 5, or use checked_count before converting to index size; avoid signed index multiplication."
+    },
+    {
+      "id": "WORLD-H3",
+      "title": "Beardifier dense bucket allocation is proportional to bounding-box area",
+      "evidence": [
+        {
+          "path": "lattice-native/src/world/gen/densityfunction/beardifier.cpp",
+          "lines": "160-190,192-205"
+        },
+        {
+          "path": "lattice-native/jni/beardifier.cpp",
+          "lines": "13-60"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeBeardifier.java",
+          "lines": "24-56"
+        },
+        {
+          "path": "lattice-server/minecraft-patches/sources/net/minecraft/world/level/levelgen/Beardifier.java.patch",
+          "lines": "16-22"
+        }
+      ],
+      "rootcause": "Full expanded structure bounds define a dense width*depth grid and resize two vector-of-vector arrays, with no cap or fallback before allocation; allocation occurs under noexcept.",
+      "attacker": "A crafted imported world structure box is a plausible input; no direct player-controlled box route established. Upstream structure NBT decoding and box restrictions were unavailable for full verification.",
+      "impact": "Potential excessive allocation/CPU and native termination; not promoted to confirmed vulnerability without external-data boundary verification.",
+      "CWE": "CWE-789 / CWE-400",
+      "severity": "not rated; requires verification",
+      "confidence": "high on allocation amplification; medium-low on import reachability",
+      "counterevidence": "Ordinary generated structure pieces are small and selected near the target chunk. A world must first be installed/loaded by a privileged operator for the candidate import path.",
+      "remediation": "Bound bucket count using checked widened arithmetic; if excessive leave buckets empty and use the existing linear candidate path. Restrict buckets to the affected chunk footprint or use sparse buckets. Avoid throwing allocation beneath noexcept without recoverable handling."
+    },
+    {
+      "id": "WORLD-H4",
+      "title": "Cleaner-backed raw-handle sampler calls lack reachability fences",
+      "evidence": [
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativePerlinNoise.java",
+          "lines": "12-14,33-50"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeSimplexNoise.java",
+          "lines": "12-14,32-46"
+        },
+        {
+          "path": "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeInterpolatedNoise.java",
+          "lines": "8-23,60-78"
+        },
+        {
+          "path": "lattice-native/jni/perlin_noise.cpp",
+          "lines": "66-82"
+        }
+      ],
+      "rootcause": "Instance methods pass primitive handle to static native methods; the owner is not explicitly kept alive until native work completes, while Cleaner can free native state when owner becomes unreachable.",
+      "attacker": "Normal last-use/GC timing is a lifecycle concern; no remote attacker influence over owner reclamation established.",
+      "impact": "Potential use-after-free/JVM crash if owner becomes unreachable while static JNI is executing. No runtime reproduction performed.",
+      "CWE": "CWE-416",
+      "severity": "not rated; lifecycle hardening",
+      "confidence": "medium; production lifetime anchors reduce exposure",
+      "counterevidence": "Interpolated sampler strongly retains its three octave objects. Production density cache retains Java DensityFunction keys in thread-local arrays and LastCompile records during use; ordinary world noise state is long lived.",
+      "remediation": "Wrap raw-handle native calls in try/finally with Reference.reachabilityFence(this), retain all child owners for composite arenas, and define synchronization/ownership for explicit close."
+    }
+  ],
+  "resolved_questions": [
+    {
+      "question": "Can packed storage values cause a native histogram or scalar/SIMD index overflow?",
+      "conclusion": "JNI enforces element bits 1..32, nonnegative indices, backing storage lengths, output windows and start+count overflow. Histogram increments only if value < histogram_size. SIMD loops split aligned middle and scalar tails. No malformed palette data exploit found in reviewed code.",
+      "evidence": [
+        "lattice-native/jni/palette_ops.cpp:25-79,91-307",
+        "lattice-native/src/world/palette/packed_storage.cpp:194-263",
+        "lattice-native/src/world/palette/packed_storage_bmi2.cpp:29-109",
+        "lattice-native/src/world/palette/packed_storage_neon.cpp:29-104"
+      ]
+    },
+    {
+      "question": "Can an arbitrary simplex permutation produce an out-of-range gradient table access?",
+      "conclusion": "No: permutation lookup masks input with 0xff and gradient selection narrows to uint8_t then modulo 12 or indexes a 256-entry modulo table. JNI checks at least 256 input ints.",
+      "evidence": [
+        "lattice-native/jni/simplex_noise.cpp:24-43",
+        "lattice-native/src/world/gen/noise/simplex_noise.cpp:58-65",
+        "lattice-native/src/world/gen/noise/simplex_noise_avx2.cpp:38-45"
+      ]
+    },
+    {
+      "question": "Do double/octave JNI constructors copy caller-owned data before release?",
+      "conclusion": "Yes. Checked 3*N/256*N lengths guard the flattened allocations, and successful constructors copy into owned arrays. Composite interpolated noise intentionally borrows child samplers; Java stores strong child references.",
+      "evidence": [
+        "lattice-native/jni/octave_perlin_noise.cpp:65-128",
+        "lattice-native/jni/double_perlin_noise.cpp:49-109",
+        "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeInterpolatedNoise.java:8-23"
+      ]
+    },
+    {
+      "question": "Are raw JNI handle casts themselves a remote arbitrary-write vulnerability?",
+      "conclusion": "No remote source of raw handles was established. Handles are issued by native constructors and stored in Java wrappers. An in-process plugin able to forge raw pointers already has full process authority; missing handle validation alone is not reported as a security vulnerability."
+    },
+    {
+      "question": "Are density caches obviously shared between worker threads?",
+      "conclusion": "Reviewed tryCompile paths compile and store results in thread-local ThreadCompileCache and LastCompile records. Cache keys strongly retain their DensityFunction. Global binding maps use a mutex. Concurrent cache rebinding/destruction remains a hardening concern only if cache ownership contract is violated; no production race proven.",
+      "evidence": [
+        "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeDensityFunction.java:1084-1165,2084-2109",
+        "lattice-native/jni/density_function.cpp:137-168,751-831"
+      ]
+    },
+    {
+      "question": "Do light levels index arbitrary queue buckets?",
+      "conclusion": "JNI caps levelCount to 1..253; propagator clamps candidate/committed levels and queue enqueue/remove check bucket bounds. Block-light rebuild checks matching column counts, shape flags and neighbor coverage before copying successful center output.",
+      "evidence": [
+        "lattice-native/jni/light_engine.cpp:277-282",
+        "lattice-native/src/world/light/level_propagator.cpp:44-101",
+        "lattice-native/src/world/light/pending_update_queue.hpp:103-128",
+        "lattice-native/src/world/light/block_light_engine.cpp:435-502"
+      ]
+    }
+  ],
+  "dead_code": [
+    {
+      "path": "lattice-native/jni/chunk_noise_sampler.cpp",
+      "lines": "69-498",
+      "classification": "orphan JNI surface in repository production build",
+      "evidence": "No tracked NativeChunkNoiseSampler Java class/declarations; rg matches only this JNI file and comments. CMakeLists.txt:575-578 still compiles the JNI and facade. Native tests use the C++ facade.",
+      "remediation": "Remove the orphan JNI TU from production target if no supported external client is intended; keep test-used C++ facade or explicitly mark as prototype. Do not delete kernels solely due missing Java bindings."
+    },
+    {
+      "path": "lattice-native/jni/palette_ops.cpp",
+      "lines": "268-305",
+      "classification": "orphan nativeCountUnique JNI export",
+      "evidence": "NativePaletteOps.java declares get/set/bulk methods only; no nativeCountUnique declaration or repository Java caller.",
+      "remediation": "Remove unused JNI export or implement documented Java API if required; preserve count_unique C++ tests if useful."
+    },
+    {
+      "path": "lattice-native/jni/material_rules.cpp",
+      "lines": "83-99",
+      "classification": "orphan nativeAddCondAlwaysTrue and nativeAddCondAboveY JNI exports",
+      "evidence": "NativeMaterialRules.java has no corresponding native declarations; no repository callers.",
+      "remediation": "Remove these two JNI exports if no external consumers; native enum cases may be retained for tests."
+    },
+    {
+      "path": "lattice-native/src/world/light/packed_info.hpp",
+      "lines": "1-161",
+      "classification": "unreferenced header",
+      "evidence": "Repository rg finds no include or packed_info namespace use outside the header itself.",
+      "remediation": "Delete unused header or mark intended future prototype explicitly."
+    },
+    {
+      "path": "lattice-native/src/world/light/block_light_engine.cpp",
+      "lines": "430-538",
+      "classification": "test-only implementation linked into production",
+      "evidence": "Repository non-test symbol search finds declarations/definitions only; tests/test_block_light_engine.cpp uses it; CMakeLists.txt:400 compiles source into lattice. No JNI/Java binding found.",
+      "remediation": "Keep in native tests but omit production linkage until integrated, or document prototype status."
+    },
+    {
+      "path": "lattice-native/src/world/gen/orevein/ore_vein.cpp",
+      "lines": "93-122",
+      "classification": "unused production batch helper",
+      "evidence": "sample_grid appears in declaration/definition only outside tests; JNI ore_vein.cpp calls sample_at directly.",
+      "remediation": "Retain as tested C++ API only if intended, otherwise remove unused batch helper."
+    }
+  ],
+  "non_security_integration_observation": {
+    "path": "lattice-server/minecraft-patches/features/0011-Accelerate-light-propagation-and-spawn-checks-with-n.patch",
+    "lines": "118-143,170-177",
+    "description": "Patch creates native queue and runUpdates returns native apply result, but reviewed patch does not forward vanilla enqueues, and callbackPropagateLevel ignores nativePtr. May be obsolete/superseded integration defect; verify final applied source before reporting. JNI GlobalRef(self) has no observed normal teardown except disable/destroy. Not a confirmed vulnerability."
+  },
+  "fully_reviewed_files": [
+    "lattice-native/jni/material_rules.cpp",
+    "lattice-native/jni/chunk_noise_sampler.cpp",
+    "lattice-native/jni/ore_vein.cpp",
+    "lattice-native/jni/light_engine.cpp",
+    "lattice-native/jni/palette_ops.cpp",
+    "lattice-native/jni/perlin_noise.cpp",
+    "lattice-native/jni/simplex_noise.cpp",
+    "lattice-native/jni/octave_perlin_noise.cpp",
+    "lattice-native/jni/double_perlin_noise.cpp",
+    "lattice-native/jni/interpolated_noise.cpp",
+    "lattice-native/jni/beardifier.cpp",
+    "lattice-native/src/world/light/block_light_engine.cpp",
+    "lattice-native/src/world/light/block_light_engine.hpp",
+    "lattice-native/src/world/light/chunk_light_provider.hpp",
+    "lattice-native/src/world/light/int64_set.hpp",
+    "lattice-native/src/world/light/level_propagator.cpp",
+    "lattice-native/src/world/light/level_propagator.hpp",
+    "lattice-native/src/world/light/long_to_byte_map.hpp",
+    "lattice-native/src/world/light/packed_info.hpp",
+    "lattice-native/src/world/light/pending_update_queue.hpp",
+    "lattice-native/src/world/palette/packed_storage.cpp",
+    "lattice-native/src/world/palette/packed_storage.hpp",
+    "lattice-native/src/world/palette/packed_storage_bmi2.cpp",
+    "lattice-native/src/world/palette/packed_storage_neon.cpp",
+    "lattice-native/src/world/palette/packed_storage_simd_inl.hpp",
+    "lattice-native/src/world/gen/densityfunction/beardifier.cpp",
+    "lattice-native/src/world/gen/densityfunction/beardifier.hpp",
+    "lattice-native/src/world/gen/densityfunction/spline.hpp",
+    "lattice-native/src/world/gen/noise/double_perlin_noise.cpp",
+    "lattice-native/src/world/gen/noise/double_perlin_noise.hpp",
+    "lattice-native/src/world/gen/noise/double_perlin_noise_avx2.cpp",
+    "lattice-native/src/world/gen/noise/double_perlin_noise_avx512.cpp",
+    "lattice-native/src/world/gen/noise/interpolated_noise.cpp",
+    "lattice-native/src/world/gen/noise/interpolated_noise.hpp",
+    "lattice-native/src/world/gen/noise/octave_perlin_noise.cpp",
+    "lattice-native/src/world/gen/noise/octave_perlin_noise.hpp",
+    "lattice-native/src/world/gen/noise/perlin_noise.cpp",
+    "lattice-native/src/world/gen/noise/perlin_noise.hpp",
+    "lattice-native/src/world/gen/noise/simplex_noise.cpp",
+    "lattice-native/src/world/gen/noise/simplex_noise.hpp",
+    "lattice-native/src/world/gen/noise/simplex_noise_avx2.cpp",
+    "lattice-native/src/world/gen/orevein/ore_vein.cpp",
+    "lattice-native/src/world/gen/orevein/ore_vein.hpp",
+    "lattice-native/src/world/gen/rng/xoroshiro128pp.hpp",
+    "lattice-native/src/world/gen/surfacebuilder/material_rules.cpp",
+    "lattice-native/src/world/gen/surfacebuilder/material_rules.hpp",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativePerlinNoise.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeSimplexNoise.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeInterpolatedNoise.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeBeardifier.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeMaterialRules.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativeLightEngine.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/nativelib/NativePaletteOps.java",
+    "lattice-server/src/main/java/com/latticemc/lattice/bridge/NativeLightEngineBridge.java",
+    "lattice-server/minecraft-patches/sources/net/minecraft/world/level/levelgen/Beardifier.java.patch"
+  ],
+  "remaining_gaps": [
+    "lattice-native/jni/density_function.cpp reviewed selected boundary/lifetime/array/grid/spline ranges, not complete 2974 lines.",
+    "lattice-native/src/world/gen/densityfunction/density_function.cpp reviewed initial helpers, selected evaluator cases and grid loops; not complete. density_function.hpp, density_function_avx2.cpp and density_function_avx512.cpp not fully read.",
+    "lattice-native/src/world/gen/chunknoise/chunk_noise_sampler.cpp and .hpp not fully read; production JNI counterpart absent.",
+    "perlin_noise_avx2.cpp and perlin_noise_avx512.cpp only targeted SIMD bounds and load/store searches, not full reads.",
+    "NativeDensityFunction.java and CompiledSurfaceRules.java reviewed relevant excerpts only; not full-file review.",
+    "No complete vendored upstream structure NBT codec or BoundingBox validation source was available in tracked files for the Beardifier import hypothesis.",
+    "No runtime sanitizer, GC last-use stress, malformed input execution, dependency CVE/network checks were performed (offline read-only constraints).",
+    "Build/patch application status and externally supported C++/JNI symbols need confirmation before dead-code deletion."
+  ]
+}

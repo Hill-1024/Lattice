@@ -32,6 +32,7 @@ function(lattice_add_test name)
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/jni
+        ${JNI_INCLUDE_DIRS}
     )
     # Test binaries do NOT inherit `lattice_baseline_flags` (which sets
     # -fno-exceptions / -fno-rtti) because doctest internally relies on
@@ -392,3 +393,7 @@ lattice_add_test(xoroshiro128pp
 lattice_add_test(ore_vein
     SOURCES  test_ore_vein.cpp
     DEPS_SRC ${CMAKE_SOURCE_DIR}/src/world/gen/orevein/ore_vein.cpp)
+
+# Overflow-safe JNI length validation (audit finding V2). Header-only helper.
+lattice_add_test(jni_bounds
+    SOURCES  test_jni_bounds.cpp)

@@ -24,16 +24,44 @@ public final class NativeRegionFileRead implements AutoCloseable {
      * Construction failures deliberately retain the caller's Java I/O path.
      */
     public static NativeRegionFileRead open(Path path) {
+        return open(path, null);
+    }
+
+    /**
+     * Opens a read-only native handle constrained to {@code allowedRoot}. The path is resolved with
+     * {@link Path#toRealPath()} first, so symlinks and {@code ..} cannot escape the root; a path
+     * outside the root, or one that cannot be resolved, returns {@code null} rather than being
+     * opened. Pass {@code null} as {@code allowedRoot} only for an internal caller that already
+     * knows the path is a server-owned RegionFile.
+     */
+    public static NativeRegionFileRead open(Path path, Path allowedRoot) {
         Objects.requireNonNull(path, "path");
         if (!isSupportedPlatform()) {
             return null;
+        }
+        final Path canonical;
+        try {
+            canonical = path.toRealPath();
+        } catch (IOException unresolved) {
+            return null;
+        }
+        if (allowedRoot != null) {
+            final Path canonicalRoot;
+            try {
+                canonicalRoot = allowedRoot.toRealPath();
+            } catch (IOException unresolvedRoot) {
+                return null;
+            }
+            if (!canonical.startsWith(canonicalRoot)) {
+                return null;
+            }
         }
         LatticeNative.ensureLoaded();
         if (!LatticeNative.isLoaded()) {
             return null;
         }
         try {
-            long handle = nativeOpen(path.toAbsolutePath().toString());
+            long handle = nativeOpen(canonical.toString());
             return handle == 0L ? null : new NativeRegionFileRead(handle);
         } catch (IOException | UnsatisfiedLinkError exception) {
             return null;

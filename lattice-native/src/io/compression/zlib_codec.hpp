@@ -99,12 +99,19 @@ constexpr int kMaxLevel      = 12;
     std::uint8_t* dst, std::size_t dst_cap,
     std::size_t* out_written) noexcept;
 
+/// Default ceiling for `zlib_validate`: uncompressed output beyond this size is
+/// rejected instead of growing the scratch buffer without bound, so a small
+/// decompression bomb cannot exhaust memory.
+inline constexpr std::size_t kMaxValidateOutputBytes = std::size_t{1} << 30; // 1 GiB
+
 /// Validate that `src[0..src_len)` is a syntactically-correct zlib stream
 /// without requiring the caller to provide an output buffer. On success,
 /// optionally stores the exact uncompressed byte length in
-/// `*out_uncompressed_size`.
+/// `*out_uncompressed_size`. Streams whose uncompressed size would exceed
+/// `max_output_bytes` return `kBadData`.
 [[nodiscard]] Status zlib_validate(
     const std::uint8_t* src, std::size_t src_len,
-    std::size_t* out_uncompressed_size = nullptr) noexcept;
+    std::size_t* out_uncompressed_size = nullptr,
+    std::size_t max_output_bytes = kMaxValidateOutputBytes) noexcept;
 
 } // namespace lattice::io::compression
