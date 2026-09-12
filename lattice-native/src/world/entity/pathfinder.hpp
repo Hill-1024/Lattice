@@ -160,6 +160,8 @@ struct PathfinderStateMirrorSection {
 };
 
 struct PathfinderStateMirror {
+    // About 12 MiB of section data per thread; mirror misses use snapshot fallback.
+    static constexpr std::size_t kMaxSections = 512;
     int world_key = 0;
     std::unordered_map<std::uint64_t, PathfinderStateMirrorSection> sections{};
 };

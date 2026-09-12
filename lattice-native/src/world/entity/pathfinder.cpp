@@ -1320,6 +1320,35 @@ void store_pathfinder_state_snapshot(PathfinderStateMirror& mirror, int world_ke
         mirror.world_key = world_key;
         mirror.sections.clear();
     }
+    // Admit a whole snapshot before writing cells. Eviction during an upload or
+    // search would invalidate cached section pointers. Oversized snapshots still
+    // serve the current eager search in JNI, but are not retained for later hits.
+    if (snapshot.size_x <= 0 || snapshot.size_y <= 0 || snapshot.size_z <= 0) return;
+    const std::int64_t end_x = std::int64_t{snapshot.min_x} + snapshot.size_x;
+    const std::int64_t end_y = std::int64_t{snapshot.min_y} + snapshot.size_y;
+    const std::int64_t end_z = std::int64_t{snapshot.min_z} + snapshot.size_z;
+    if (end_x > std::numeric_limits<int>::max() || end_y > std::numeric_limits<int>::max()
+            || end_z > std::numeric_limits<int>::max()) return;
+    const int first_x = snapshot.min_x >> 4;
+    const int first_y = snapshot.min_y >> 4;
+    const int first_z = snapshot.min_z >> 4;
+    const int last_x = static_cast<int>(end_x - 1) >> 4;
+    const int last_y = static_cast<int>(end_y - 1) >> 4;
+    const int last_z = static_cast<int>(end_z - 1) >> 4;
+    const std::size_t nx = static_cast<std::size_t>(last_x - first_x + 1);
+    const std::size_t ny = static_cast<std::size_t>(last_y - first_y + 1);
+    const std::size_t nz = static_cast<std::size_t>(last_z - first_z + 1);
+    constexpr auto limit = PathfinderStateMirror::kMaxSections;
+    if (nx > limit || ny > limit || nz > limit || nx * ny * nz > limit) return;
+    std::size_t missing = 0;
+    for (int sy = first_y; sy <= last_y; ++sy) {
+        for (int sz = first_z; sz <= last_z; ++sz) {
+            for (int sx = first_x; sx <= last_x; ++sx) {
+                missing += !mirror.sections.contains(mirror_section_key(sx * 16, sy * 16, sz * 16));
+            }
+        }
+    }
+    if (mirror.sections.size() + missing > limit) mirror.sections.clear();
     int index = 0;
     // Cache the section pointer across the innermost run, mirroring
     // load_pathfinder_state_snapshot. The key only changes every sixteen x, so an

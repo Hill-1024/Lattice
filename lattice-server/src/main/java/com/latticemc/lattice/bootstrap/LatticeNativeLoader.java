@@ -2,14 +2,11 @@ package com.latticemc.lattice.bootstrap;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.ByteArrayInputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
@@ -231,48 +228,10 @@ public final class LatticeNativeLoader {
     }
 
     private static Path extractToCache(String libFile, InputStream in) throws IOException {
-        final Path cacheDir = resolveCacheDir();
-        Files.createDirectories(cacheDir);
-        final byte[] bytes = in.readAllBytes();
-        final String hashHex = shortHash(bytes);
-        final Path target = cacheDir.resolve(libFile + "." + hashHex);
-
-        if (Files.exists(target) && Files.size(target) == bytes.length) {
-            return target;
-        }
-
-        final Path tmp = Files.createTempFile(cacheDir, libFile + ".", ".part");
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            out.write(bytes);
-        }
-        try {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicFailed) {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-        target.toFile().deleteOnExit();
-        return target;
-    }
-
-    private static Path resolveCacheDir() {
         final String override = System.getProperty(SYS_CACHE_DIR, "").trim();
-        if (!override.isEmpty()) {
-            return Path.of(override);
-        }
-        return Path.of(System.getProperty("java.io.tmpdir"), "lattice-native");
-    }
-
-    private static String shortHash(byte[] bytes) {
-        try {
-            final byte[] full = MessageDigest.getInstance("SHA-256").digest(bytes);
-            final StringBuilder sb = new StringBuilder(16);
-            for (int i = 0; i < 8; ++i) {
-                sb.append(String.format("%02x", full[i] & 0xFF));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError(e);
-        }
+        final Path parent = override.isEmpty()
+                ? Path.of(System.getProperty("java.io.tmpdir")) : Path.of(override);
+        return NativeLibraryCache.extract(parent, libFile, in);
     }
 
     private static String sha256Hex(byte[] bytes) {
